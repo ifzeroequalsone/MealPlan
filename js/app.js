@@ -631,6 +631,11 @@ function openRecipeEditor(r) {
       ${recipe.ingredients.map((ing, i) => ingredientRow(ing, i)).join('')}
     </div>
     <div class="divider"></div>
+    <div class="form-group">
+      <label>Directions (one step per line)</label>
+      <textarea id="re-directions" rows="5" placeholder="One step per line, e.g.&#10;Season the chicken&#10;Cook 6–7 min per side" style="width:100%;font-family:inherit;font-size:0.9rem;line-height:1.4;padding:9px;border:1px solid var(--border);border-radius:8px;resize:vertical">${esc(recipeDirections(recipe).join('\n'))}</textarea>
+    </div>
+    <div class="divider"></div>
     <strong style="font-size:0.85rem;display:block;margin-bottom:10px">Nutrition (per serving)</strong>
     <div class="form-row">
       <div class="form-group"><label>Calories</label><input type="number" id="re-cal" value="${recipe.macros.calories}" min="0"></div>
@@ -681,6 +686,7 @@ window.saveRecipe = function(id, isNew) {
     prepTime: parseInt(document.getElementById('re-prep')?.value) || 15,
     servings: parseInt(document.getElementById('re-servings')?.value) || 1,
     ingredients: window._editIngredients ?? [],
+    directions: (document.getElementById('re-directions')?.value ?? '').split('\n').map(s => s.trim()).filter(Boolean),
     macros: {
       calories: parseInt(document.getElementById('re-cal')?.value) || 0,
       protein: parseInt(document.getElementById('re-prot')?.value) || 0,
