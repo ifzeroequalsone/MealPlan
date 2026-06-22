@@ -52,7 +52,6 @@ function render_dashboard() {
   const targets = calcTargets(p);
   const dl = daysLeft(p);
 
-  // Sum today's meals
   const todayKey = getTodayKey();
   const weekKey = getWeekKey();
   const todayMeals = state.mealPlan.weeks?.[weekKey]?.[todayKey] ?? {};
@@ -70,12 +69,11 @@ function render_dashboard() {
   const lbsTo = p.goalWeight;
   const lbsFrom = p.currentWeight;
   const totalDiff = Math.abs(lbsFrom - lbsTo);
-  const progressPct = totalDiff === 0 ? 100 : 0; // user updates current weight over time
+  const progressPct = totalDiff === 0 ? 100 : 0;
 
   const proteinGap = Math.max(0, targets.protein - todayMacros.protein);
   const summary = goalSummary(p);
   const tdee = calcTDEE(p);
-  const name = p.name ? `Hey, ${p.name}!` : 'Your Dashboard';
 
   document.getElementById('dash-content').innerHTML = `
     <div class="notice notice-${p.increaseMuscle ? 'success' : p.bulkCut ? 'info' : dl < 14 ? 'warn' : 'info'}">
@@ -177,7 +175,6 @@ function render_dashboard() {
     </div>
   `;
 
-  // re-bind nav links inside the rendered content
   document.querySelectorAll('[data-nav]').forEach(el => {
     el.addEventListener('click', e => { e.preventDefault(); navigate(el.dataset.nav); });
   });
@@ -297,13 +294,11 @@ function render_goals() {
     </div>
   `;
 
-  // Live recalculate on any input change
   const inputs = ['g-name','g-age','g-gender','g-hft','g-hin','g-activity','g-cw','g-gw','g-weeks','g-start'];
   inputs.forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('input', liveRecalc);
   });
-  // Toggles: mutually exclusive + live recalc
   const muscleEl = document.getElementById('g-muscle');
   const bulkcutEl = document.getElementById('g-bulkcut');
   if (muscleEl) muscleEl.addEventListener('change', () => { if (muscleEl.checked) bulkcutEl.checked = false; liveRecalc(); });
@@ -318,7 +313,6 @@ function liveRecalc() {
 }
 
 function renderTargetCards(targets, p) {
-  const tdee = calcTargets(p).tdee;
   return `
     <div class="grid-2" style="gap:10px;margin-bottom:12px">
       <div style="text-align:center;padding:12px;background:var(--green-light);border-radius:10px">
@@ -412,6 +406,7 @@ function render_recipes(filter = '') {
   const chips = [
     { label: 'All', filter: '' },
     { label: "🛒 Trader Joe's", filter: 'Trader' },
+    { label: '🍽️ Eat Out', filter: 'Eat Out' },
     { label: '🥤 Protein Shakes', filter: 'Protein Shake' },
     { label: '💪 High Protein', filter: 'High Protein' },
     { label: '⚡ Quick', filter: 'Quick' },
@@ -435,7 +430,7 @@ function recipeCard(r) {
     <div class="recipe-card" onclick="viewRecipe('${r.id}')">
       <div class="recipe-thumb ${r.color ?? 'green'}"></div>
       <div class="recipe-body">
-        <div class="recipe-name">${esc(r.name)}</div>
+        <div class="recipe-name">${esc(r.name)}${r.type === 'component' ? ' <span style="font-size:0.7rem;font-weight:600;color:#888;background:#f0f0f0;padding:1px 6px;border-radius:4px;vertical-align:middle">add-on</span>' : ''}</div>
         <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:8px">⏱ ${r.prepTime} min · ${r.servings} serving${r.servings>1?'s':''}</div>
         <div class="recipe-tags">
           ${r.tags.map(t => `<span class="tag ${tagColor(t)}">${esc(t)}</span>`).join('')}
@@ -459,6 +454,7 @@ function tagColor(tag) {
   const t = tag.toLowerCase();
   if (t.includes('protein') || t.includes('chicken') || t.includes('turkey')) return 'blue';
   if (t.includes('breakfast') || t.includes('quick')) return 'orange';
+  if (t.includes('eat out')) return 'purple';
   return '';
 }
 
@@ -508,7 +504,7 @@ window.deleteRecipe = function(id) {
 
 function openRecipeEditor(r) {
   const isNew = !r;
-  const recipe = r ?? { id: uid(), name: '', color: 'green', tags: [], prepTime: 15, servings: 1, ingredients: [{ name: '', amount: '', unit: 'oz' }], macros: { calories: 0, protein: 0, carbs: 0, fat: 0 } };
+  const recipe = r ?? { id: uid(), name: '', color: 'green', type: 'meal', tags: [], prepTime: 15, servings: 1, ingredients: [{ name: '', amount: '', unit: 'oz' }], macros: { calories: 0, protein: 0, carbs: 0, fat: 0 } };
 
   openModal(isNew ? 'New Recipe' : 'Edit Recipe', `
     <div class="form-group"><label>Recipe Name</label><input type="text" id="re-name" value="${esc(recipe.name)}" placeholder="e.g. Grilled Salmon"></div>
@@ -517,6 +513,13 @@ function openRecipeEditor(r) {
       <div class="form-group"><label>Servings</label><input type="number" id="re-servings" value="${recipe.servings}" min="1"></div>
     </div>
     <div class="form-group"><label>Tags (comma-separated)</label><input type="text" id="re-tags" value="${esc(recipe.tags.join(', '))}" placeholder="Breakfast, High Protein, Quick"></div>
+    <div class="form-group">
+      <label>Type</label>
+      <select id="re-type">
+        <option value="meal" ${(!recipe.type || recipe.type==='meal')?'selected':''}>🍽️ Full Meal</option>
+        <option value="component" ${recipe.type==='component'?'selected':''}>🧩 Component / Add-on</option>
+      </select>
+    </div>
     <div class="form-group">
       <label>Color Theme</label>
       <select id="re-color">
@@ -580,6 +583,7 @@ window.saveRecipe = function(id, isNew) {
     id,
     name,
     color: document.getElementById('re-color')?.value ?? 'green',
+    type: document.getElementById('re-type')?.value ?? 'meal',
     tags: (document.getElementById('re-tags')?.value ?? '').split(',').map(t => t.trim()).filter(Boolean),
     prepTime: parseInt(document.getElementById('re-prep')?.value) || 15,
     servings: parseInt(document.getElementById('re-servings')?.value) || 1,
@@ -754,7 +758,6 @@ window.selectMealDay = function(weekKey, dayKey) {
 };
 
 window.openMealPicker = function(weekKey, dayKey, mealKey) {
-  const current = state.mealPlan.weeks?.[weekKey]?.[dayKey]?.[mealKey];
   const mealLabel = MEALS[MEAL_KEYS.indexOf(mealKey)];
   const dayLabel = dayKey.charAt(0).toUpperCase() + dayKey.slice(1);
   openModal(`${dayLabel} — ${mealLabel}`, `
@@ -775,7 +778,7 @@ function mealPickerList(recipes, weekKey, dayKey, mealKey) {
   return recipes.map(r => `
     <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-radius:8px;cursor:pointer;border:1.5px solid var(--border);margin-bottom:6px;transition:border-color 0.1s" onmouseover="this.style.borderColor='var(--green)'" onmouseout="this.style.borderColor='var(--border)'" onclick="assignMeal('${weekKey}','${dayKey}','${mealKey}','${r.id}')">
       <div>
-        <div style="font-weight:600;font-size:0.9rem">${esc(r.name)}</div>
+        <div style="font-weight:600;font-size:0.9rem">${esc(r.name)}${r.type === 'component' ? ' <span style="font-size:0.7rem;color:#aaa">(add-on)</span>' : ''}</div>
         <div style="font-size:0.75rem;color:var(--text-muted)">${r.macros.calories} cal · ${r.macros.protein}g protein · ⏱ ${r.prepTime}min</div>
       </div>
       <span class="btn btn-primary btn-sm">Select</span>
@@ -815,9 +818,17 @@ window.autoGenerateWeek = function() {
   if (!state.mealPlan.weeks) state.mealPlan.weeks = {};
   state.mealPlan.weeks[weekKey] = {};
 
+  const THURSDAY_LUNCH_ID = 'po1'; // Ahi Tuna Poke Bowl pinned to Thu lunch
+
   function poolFor(mk) {
     const patterns = { breakfast: /breakfast/i, lunch: /lunch/i, dinner: /dinner/i, snack: /snack/i };
     let pool = state.recipes.filter(r => r.tags.some(t => patterns[mk].test(t)));
+    // Main meal slots only use full meals, not components (sides, shakes, add-ons)
+    if (mk !== 'snack') {
+      const mealsOnly = pool.filter(r => !r.type || r.type === 'meal');
+      if (mealsOnly.length > 0) pool = mealsOnly;
+    }
+    if (pool.length === 0) pool = state.recipes.filter(r => !r.type || r.type === 'meal');
     if (pool.length === 0) pool = [...state.recipes];
     if (isProteinMode && mk === 'snack') {
       const shakes = pool.filter(r => r.tags.some(t => /protein shake/i.test(t)));
@@ -834,6 +845,11 @@ window.autoGenerateWeek = function() {
     const dayData = {};
     const used = new Set();
     MEAL_KEYS.forEach(mk => {
+      // Thursday (dayIdx 3) lunch is always the poke bowl
+      if (dayIdx === 3 && mk === 'lunch') {
+        const pinned = state.recipes.find(r => r.id === THURSDAY_LUNCH_ID);
+        if (pinned) { dayData[mk] = THURSDAY_LUNCH_ID; used.add(THURSDAY_LUNCH_ID); return; }
+      }
       const pool = poolFor(mk);
       if (!pool.length) return;
       const offset = dayIdx % pool.length;
@@ -860,6 +876,7 @@ window.generateGroceryFromPlan = function() {
   recipeIds.forEach(rid => {
     const recipe = state.recipes.find(r => r.id === rid);
     if (!recipe) return;
+    if (recipe.tags.some(t => /eat out/i.test(t))) return; // eat-out meals don't need groceries
     recipe.ingredients.forEach(ing => {
       addGroceryItem(ing.name, ing.amount, ing.unit, recipe.name);
     });
@@ -871,7 +888,7 @@ window.generateGroceryFromPlan = function() {
 };
 
 // ── Grocery ────────────────────────────────────────────
-const GROCERY_CATS = ['Produce', 'Meat & Fish', 'Dairy & Eggs', 'Grains & Bread', 'Pantry', 'Frozen', 'Beverages', 'Other'];
+const GROCERY_CATS = ['Produce', 'Meat & Fish', 'Dairy & Eggs', 'Grains & Bread', 'Pantry', 'Frozen', 'Beverages', 'Eat Out', 'Other'];
 
 function categorize(name) {
   const n = name.toLowerCase();
@@ -889,9 +906,7 @@ function categorize(name) {
 
 function addGroceryItem(name, amount, unit, source) {
   const existing = state.grocery.find(g => g.name.toLowerCase() === name.toLowerCase() && !g.checked);
-  if (existing) {
-    return;
-  }
+  if (existing) return;
   state.grocery.push({
     id: uid(),
     name,
@@ -906,6 +921,10 @@ function addGroceryItem(name, amount, unit, source) {
 window.addToGroceryFromRecipe = function(id) {
   const recipe = state.recipes.find(r => r.id === id);
   if (!recipe) return;
+  if (recipe.tags.some(t => /eat out/i.test(t))) {
+    showToast(`${recipe.name} is an eat-out meal — nothing to add to grocery!`, 'warn');
+    return;
+  }
   recipe.ingredients.forEach(ing => addGroceryItem(ing.name, ing.amount, ing.unit, recipe.name));
   persist();
   showToast(`${recipe.ingredients.length} ingredients added to grocery list!`);
