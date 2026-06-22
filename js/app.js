@@ -412,6 +412,7 @@ function render_recipes(filter = '') {
   const chips = [
     { label: 'All', filter: '' },
     { label: "🛒 Trader Joe's", filter: 'Trader' },
+    { label: '🍽️ Eat Out', filter: 'Eat Out' },
     { label: '🥤 Protein Shakes', filter: 'Protein Shake' },
     { label: '💪 High Protein', filter: 'High Protein' },
     { label: '⚡ Quick', filter: 'Quick' },
@@ -435,7 +436,7 @@ function recipeCard(r) {
     <div class="recipe-card" onclick="viewRecipe('${r.id}')">
       <div class="recipe-thumb ${r.color ?? 'green'}"></div>
       <div class="recipe-body">
-        <div class="recipe-name">${esc(r.name)}</div>
+        <div class="recipe-name">${esc(r.name)}${r.type === 'component' ? ' <span style="font-size:0.7rem;font-weight:600;color:#888;background:#f0f0f0;padding:1px 6px;border-radius:4px;vertical-align:middle">add-on</span>' : ''}</div>
         <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:8px">⏱ ${r.prepTime} min · ${r.servings} serving${r.servings>1?'s':''}</div>
         <div class="recipe-tags">
           ${r.tags.map(t => `<span class="tag ${tagColor(t)}">${esc(t)}</span>`).join('')}
@@ -459,6 +460,7 @@ function tagColor(tag) {
   const t = tag.toLowerCase();
   if (t.includes('protein') || t.includes('chicken') || t.includes('turkey')) return 'blue';
   if (t.includes('breakfast') || t.includes('quick')) return 'orange';
+  if (t.includes('eat out')) return 'purple';
   return '';
 }
 
@@ -517,6 +519,13 @@ function openRecipeEditor(r) {
       <div class="form-group"><label>Servings</label><input type="number" id="re-servings" value="${recipe.servings}" min="1"></div>
     </div>
     <div class="form-group"><label>Tags (comma-separated)</label><input type="text" id="re-tags" value="${esc(recipe.tags.join(', '))}" placeholder="Breakfast, High Protein, Quick"></div>
+    <div class="form-group">
+      <label>Type</label>
+      <select id="re-type">
+        <option value="meal" ${(!recipe.type || recipe.type==='meal')?'selected':''}>🍽️ Full Meal</option>
+        <option value="component" ${recipe.type==='component'?'selected':''}>🧩 Component / Add-on</option>
+      </select>
+    </div>
     <div class="form-group">
       <label>Color Theme</label>
       <select id="re-color">
@@ -580,6 +589,7 @@ window.saveRecipe = function(id, isNew) {
     id,
     name,
     color: document.getElementById('re-color')?.value ?? 'green',
+    type: document.getElementById('re-type')?.value ?? 'meal',
     tags: (document.getElementById('re-tags')?.value ?? '').split(',').map(t => t.trim()).filter(Boolean),
     prepTime: parseInt(document.getElementById('re-prep')?.value) || 15,
     servings: parseInt(document.getElementById('re-servings')?.value) || 1,
@@ -816,9 +826,17 @@ window.autoGenerateWeek = function() {
   if (!state.mealPlan.weeks) state.mealPlan.weeks = {};
   state.mealPlan.weeks[weekKey] = {};
 
+  const THURSDAY_LUNCH_ID = 'po1'; // Ahi Tuna Poke Bowl pinned to Thu lunch
+
   function poolFor(mk) {
     const patterns = { breakfast: /breakfast/i, lunch: /lunch/i, dinner: /dinner/i, snack: /snack/i };
     let pool = state.recipes.filter(r => r.tags.some(t => patterns[mk].test(t)));
+    // Main meal slots only use full meals, not components (sides, shakes, add-ons)
+    if (mk !== 'snack') {
+      const mealsOnly = pool.filter(r => !r.type || r.type === 'meal');
+      if (mealsOnly.length > 0) pool = mealsOnly;
+    }
+    if (pool.length === 0) pool = state.recipes.filter(r => !r.type || r.type === 'meal');
     if (pool.length === 0) pool = [...state.recipes];
     if (isProteinMode && mk === 'snack') {
       const shakes = pool.filter(r => r.tags.some(t => /protein shake/i.test(t)));
@@ -835,6 +853,11 @@ window.autoGenerateWeek = function() {
     const dayData = {};
     const used = new Set();
     MEAL_KEYS.forEach(mk => {
+      // Thursday (dayIdx 3) lunch is always the poke bowl
+      if (dayIdx === 3 && mk === 'lunch') {
+        const pinned = state.recipes.find(r => r.id === THURSDAY_LUNCH_ID);
+        if (pinned) { dayData[mk] = THURSDAY_LUNCH_ID; used.add(THURSDAY_LUNCH_ID); return; }
+      }
       const pool = poolFor(mk);
       if (!pool.length) return;
       const offset = dayIdx % pool.length;
@@ -861,6 +884,7 @@ window.generateGroceryFromPlan = function() {
   recipeIds.forEach(rid => {
     const recipe = state.recipes.find(r => r.id === rid);
     if (!recipe) return;
+    if (recipe.tags.some(t => /eat out/i.test(t))) return; // eat-out meals don't need groceries
     recipe.ingredients.forEach(ing => {
       addGroceryItem(ing.name, ing.amount, ing.unit, recipe.name);
     });
@@ -872,7 +896,7 @@ window.generateGroceryFromPlan = function() {
 };
 
 // ── Grocery ────────────────────────────────────────────
-const GROCERY_CATS = ['Produce', 'Meat & Fish', 'Dairy & Eggs', 'Grains & Bread', 'Pantry', 'Frozen', 'Beverages', 'Other'];
+const GROCERY_CATS = ['Produce', 'Meat & Fish', 'Dairy & Eggs', 'Grains & Bread', 'Pantry', 'Frozen', 'Beverages', 'Eat Out', 'Other'];
 
 function categorize(name) {
   const n = name.toLowerCase();
@@ -908,6 +932,10 @@ function addGroceryItem(name, amount, unit, source) {
 window.addToGroceryFromRecipe = function(id) {
   const recipe = state.recipes.find(r => r.id === id);
   if (!recipe) return;
+  if (recipe.tags.some(t => /eat out/i.test(t))) {
+    showToast(`${recipe.name} is an eat-out meal — nothing to add to grocery!`, 'warn');
+    return;
+  }
   recipe.ingredients.forEach(ing => addGroceryItem(ing.name, ing.amount, ing.unit, recipe.name));
   persist();
   showToast(`${recipe.ingredients.length} ingredients added to grocery list!`);
