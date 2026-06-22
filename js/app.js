@@ -754,6 +754,24 @@ function mealMoney(recipe) {
 function slotId(v) { return typeof v === 'string' ? v : v?.id; }
 function slotServings(v) { return (v && typeof v === 'object' && v.servings) ? v.servings : 1; }
 
+// Auto-generate tuning (persisted). Defaults: balance cal+protein, max 4/slot.
+function planSettings() {
+  const ps = state.planSettings ?? {};
+  return { optimizeFor: ps.optimizeFor ?? 'balance', maxServings: ps.maxServings ?? 4 };
+}
+function planSettingsBar() {
+  const { optimizeFor, maxServings } = planSettings();
+  const optBtn = (v, l) => `<button class="btn btn-sm ${optimizeFor === v ? 'btn-primary' : 'btn-outline'}" onclick="setPlanOpt('${v}')">${l}</button>`;
+  const mxBtn = (v) => `<button class="btn btn-sm ${maxServings === v ? 'btn-primary' : 'btn-outline'}" onclick="setPlanMax(${v})">${v}</button>`;
+  return `
+    <div class="card" style="padding:10px 12px;margin-bottom:12px;display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;font-size:0.8rem">
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="color:var(--text-muted);font-weight:600">Auto-gen optimize</span>${optBtn('calories','Cal')}${optBtn('protein','Protein')}${optBtn('balance','Balance')}</div>
+      <div style="display:flex;align-items:center;gap:6px"><span style="color:var(--text-muted);font-weight:600">Max/meal</span>${mxBtn(3)}${mxBtn(4)}${mxBtn(5)}</div>
+    </div>`;
+}
+window.setPlanOpt = function(v) { state.planSettings = { ...planSettings(), optimizeFor: v }; persist(); render_mealplan(); };
+window.setPlanMax = function(v) { state.planSettings = { ...planSettings(), maxServings: v }; persist(); render_mealplan(); };
+
 // Sum macros for a day's slots, accounting for servings.
 function dayMacros(day) {
   const t = { calories: 0, protein: 0, carbs: 0, fat: 0 };
@@ -870,7 +888,8 @@ function render_mealplan() {
             </div>
           </div>`;
       }).join('')}
-      <div style="margin-top:8px;display:flex;flex-direction:column;gap:8px">
+      ${planSettingsBar()}
+      <div style="display:flex;flex-direction:column;gap:8px">
         <button class="btn btn-secondary" style="width:100%;justify-content:center" onclick="autoGenerateWeek()">⚡ Auto-Generate Week</button>
         <button class="btn btn-secondary" style="width:100%;justify-content:center" onclick="autoGenerateWeek(true)">🍱 Meal-Prep Week</button>
         <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="generateGroceryFromPlan()">🛒 Generate Grocery List</button>
@@ -879,6 +898,7 @@ function render_mealplan() {
   } else {
     document.getElementById('mealplan-content').innerHTML = `
       ${weekNav}
+      ${planSettingsBar()}
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:12px">
         <button class="btn btn-secondary btn-sm" onclick="autoGenerateWeek()">⚡ Auto-Generate Week</button>
         <button class="btn btn-secondary btn-sm" onclick="autoGenerateWeek(true)">🍱 Meal-Prep Week</button>
@@ -933,7 +953,13 @@ window.selectMealDay = function(weekKey, dayKey) {
 window.openMealPicker = function(weekKey, dayKey, mealKey) {
   const mealLabel = MEALS[MEAL_KEYS.indexOf(mealKey)];
   const dayLabel = dayKey.charAt(0).toUpperCase() + dayKey.slice(1);
+  const curServings = slotServings(state.mealPlan.weeks?.[weekKey]?.[dayKey]?.[mealKey]);
   openModal(`${dayLabel} — ${mealLabel}`, `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+      <label style="font-weight:600;font-size:0.85rem;margin:0">Servings</label>
+      <input type="number" id="mp-servings" min="1" max="10" value="${curServings}" style="width:70px">
+      <span style="color:var(--text-muted);font-size:0.78rem">applied to the meal you pick</span>
+    </div>
     <div class="form-group">
       <label>Search Recipes</label>
       <input type="text" id="mp-search" placeholder="Filter recipes…" oninput="filterMealPicker(this.value,'${weekKey}','${dayKey}','${mealKey}')">
@@ -969,7 +995,8 @@ window.assignMeal = function(weekKey, dayKey, mealKey, recipeId) {
   if (!state.mealPlan.weeks) state.mealPlan.weeks = {};
   if (!state.mealPlan.weeks[weekKey]) state.mealPlan.weeks[weekKey] = {};
   if (!state.mealPlan.weeks[weekKey][dayKey]) state.mealPlan.weeks[weekKey][dayKey] = {};
-  state.mealPlan.weeks[weekKey][dayKey][mealKey] = recipeId;
+  const srv = Math.max(1, parseInt(document.getElementById('mp-servings')?.value) || 1);
+  state.mealPlan.weeks[weekKey][dayKey][mealKey] = srv > 1 ? { id: recipeId, servings: srv } : recipeId;
   persist();
   closeModal();
   render_mealplan();
@@ -1035,15 +1062,24 @@ window.autoGenerateWeek = function(mealPrep = false) {
   const prepPlan = {};
   if (mealPrep) MEAL_KEYS.forEach(mk => { prepPlan[mk] = prepPlanFor(mk); });
 
-  // Scale up portions until the day's calories reach (near) the target. Spreads
-  // extra servings across slots and won't overshoot by more than a small margin.
+  // Scale up portions toward the target. Honors the user's tuning (optimize for
+  // calories / protein / balance, and max servings per slot). Spreads extra
+  // servings across slots and caps calorie overshoot at ~6%.
   const target = calcTargets(state.profile);
+  const { optimizeFor, maxServings: MAX_SERV } = planSettings();
+  const tol = target.calories * 0.06;
+  function goalsMet(tot) {
+    const calOk = tot.calories >= target.calories - tol;
+    const proOk = tot.protein >= target.protein;
+    const calMaxed = tot.calories >= target.calories + tol; // can't add more without overshoot
+    if (optimizeFor === 'calories') return calOk;
+    if (optimizeFor === 'protein') return proOk || calMaxed;
+    return (calOk && proOk) || calMaxed; // balance
+  }
   function fillDayToTarget(dayData) {
-    const tol = target.calories * 0.06;
-    const MAX_SERV = 4;
-    for (let iter = 0; iter < 24; iter++) {
+    for (let iter = 0; iter < 30; iter++) {
       const tot = dayMacros(dayData);
-      if (tot.calories >= target.calories - tol) break;
+      if (goalsMet(tot)) break;
       let best = null, fallback = null;
       Object.keys(dayData).forEach(mk => {
         const entry = dayData[mk];
@@ -1051,10 +1087,18 @@ window.autoGenerateWeek = function(mealPrep = false) {
         if (!r || isEatOutRecipe(r) || slotServings(entry) >= MAX_SERV) return; // don't scale restaurant meals
         const cal = r.macros.calories;
         if (!fallback || cal < fallback.cal) fallback = { mk, cal };
-        if (tot.calories + cal > target.calories + tol) return; // would overshoot
+        if (tot.calories + cal > target.calories + tol) return; // would overshoot calories
+        // Pick the macro to chase: protein when that's the bigger relative gap.
+        let primary;
+        if (optimizeFor === 'protein') primary = r.macros.protein;
+        else if (optimizeFor === 'calories') primary = cal;
+        else {
+          const calGap = Math.max(0, (target.calories - tot.calories) / target.calories);
+          const proGap = Math.max(0, (target.protein - tot.protein) / target.protein);
+          primary = proGap > calGap ? r.macros.protein : cal;
+        }
         const cur = slotServings(entry);
-        const sec = isProteinMode ? r.macros.protein : cal;
-        if (!best || cur < best.cur || (cur === best.cur && sec > best.sec)) best = { mk, cur, sec };
+        if (!best || cur < best.cur || (cur === best.cur && primary > best.primary)) best = { mk, cur, primary };
       });
       if (best) { dayData[best.mk].servings += 1; continue; }
       // Every bump overshoots — take the smallest one only if it lands closer.

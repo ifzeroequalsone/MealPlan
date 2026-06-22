@@ -358,6 +358,7 @@ function getInitialState() {
     recipes: defaultRecipes,
     mealPlan: defaultMealPlan,
     grocery: defaultGrocery,
+    planSettings: { optimizeFor: 'balance', maxServings: 4 },
   };
 }
 
