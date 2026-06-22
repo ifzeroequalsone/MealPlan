@@ -876,7 +876,7 @@ window.generateGroceryFromPlan = function() {
   recipeIds.forEach(rid => {
     const recipe = state.recipes.find(r => r.id === rid);
     if (!recipe) return;
-    if (recipe.tags.some(t => /eat out/i.test(t))) return; // eat-out meals don't need groceries
+    if (recipe.tags.some(t => /eat out/i.test(t))) { addEatOutItem(recipe); return; } // eat-out meals get a price line, not ingredients
     recipe.ingredients.forEach(ing => {
       addGroceryItem(ing.name, ing.amount, ing.unit, recipe.name);
     });
@@ -889,6 +889,29 @@ window.generateGroceryFromPlan = function() {
 
 // ── Grocery ────────────────────────────────────────────
 const GROCERY_CATS = ['Produce', 'Meat & Fish', 'Dairy & Eggs', 'Grains & Bread', 'Pantry', 'Frozen', 'Beverages', 'Eat Out', 'Other'];
+
+// Turn recipe-specific ingredient names into generic shopping-list names,
+// e.g. "Brown rice (cooked)" → "Brown rice", "Greek yogurt (0%)" → "Greek yogurt".
+function genericizeName(name) {
+  return String(name).replace(/\s*\([^)]*\)/g, '').replace(/\s{2,}/g, ' ').trim();
+}
+
+function formatPrice(price) {
+  const p = Number(price) || 0;
+  return p > 0 ? `$${p.toFixed(2)}` : '$0';
+}
+
+// Fallback prices by meal name, for eat-out recipes saved to localStorage
+// before the price field existed. recipe.price always takes precedence.
+const EAT_OUT_PRICES = {
+  'Chipotle Chicken Bowl': 10.95,
+  'Chipotle Chicken + Steak Bowl': 14.45,
+  'Ahi Tuna Poke Bowl': 0, // provided by work
+};
+
+function eatOutPrice(recipe) {
+  return recipe.price ?? EAT_OUT_PRICES[recipe.name] ?? 0;
+}
 
 function categorize(name) {
   const n = name.toLowerCase();
@@ -904,25 +927,35 @@ function categorize(name) {
   return 'Other';
 }
 
-function addGroceryItem(name, amount, unit, source) {
-  const existing = state.grocery.find(g => g.name.toLowerCase() === name.toLowerCase() && !g.checked);
+function addGroceryItem(name, amount, unit, source, category) {
+  const gname = genericizeName(name);
+  const existing = state.grocery.find(g => g.name.toLowerCase() === gname.toLowerCase() && !g.checked);
   if (existing) return;
   state.grocery.push({
     id: uid(),
-    name,
+    name: gname,
     amount,
     unit,
-    category: categorize(name),
+    category: category ?? categorize(gname),
     checked: false,
     source: source ?? '',
   });
+}
+
+// Add an eat-out meal to the grocery list under "Eat Out", showing its price
+// where the quantity normally goes ($0 / provided by work renders as "(work)").
+function addEatOutItem(recipe) {
+  const price = eatOutPrice(recipe);
+  addGroceryItem(recipe.name, formatPrice(price), price > 0 ? '' : '(work)', recipe.name, 'Eat Out');
 }
 
 window.addToGroceryFromRecipe = function(id) {
   const recipe = state.recipes.find(r => r.id === id);
   if (!recipe) return;
   if (recipe.tags.some(t => /eat out/i.test(t))) {
-    showToast(`${recipe.name} is an eat-out meal — nothing to add to grocery!`, 'warn');
+    addEatOutItem(recipe);
+    persist();
+    showToast(`${recipe.name} added to your Eat Out list!`);
     return;
   }
   recipe.ingredients.forEach(ing => addGroceryItem(ing.name, ing.amount, ing.unit, recipe.name));

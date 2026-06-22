@@ -282,6 +282,7 @@ const defaultRecipes = [
     tags: ['Eat Out', 'Lunch', 'Dinner', 'High Protein'],
     prepTime: 5,
     servings: 1,
+    price: 10.95,
     ingredients: [
       { name: 'Chicken (grilled)', amount: '4', unit: 'oz' },
       { name: 'White rice', amount: '1', unit: 'serving' },
@@ -299,6 +300,7 @@ const defaultRecipes = [
     tags: ['Eat Out', 'Lunch', 'Dinner', 'High Protein'],
     prepTime: 5,
     servings: 1,
+    price: 14.45,
     ingredients: [
       { name: 'Chicken (grilled)', amount: '4', unit: 'oz' },
       { name: 'Steak', amount: '4', unit: 'oz' },
@@ -317,6 +319,7 @@ const defaultRecipes = [
     tags: ['Eat Out', 'Lunch', 'High Protein'],
     prepTime: 5,
     servings: 1,
+    price: 0, // provided by work
     ingredients: [
       { name: 'Ahi tuna', amount: '4', unit: 'oz' },
       { name: 'Sushi rice', amount: '1', unit: 'cup' },
