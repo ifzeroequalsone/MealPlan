@@ -892,17 +892,24 @@ window.autoGenerateWeek = function(mealPrep = false) {
 window.generateGroceryFromPlan = function() {
   const weekKey = getWeekKey(mealPlanWeekOffset);
   const weekData = state.mealPlan.weeks?.[weekKey] ?? {};
-  const recipeIds = new Set();
-  Object.values(weekData).forEach(day => Object.values(day).flat().forEach(rid => recipeIds.add(rid)));
+  // Count how many times each recipe is eaten this week so quantities scale.
+  const counts = {};
+  Object.values(weekData).forEach(day => Object.values(day).flat().forEach(rid => {
+    counts[rid] = (counts[rid] ?? 0) + 1;
+  }));
+  const recipeIds = Object.keys(counts);
 
-  if (recipeIds.size === 0) { showToast('No meals planned this week.', 'warn'); return; }
+  if (recipeIds.length === 0) { showToast('No meals planned this week.', 'warn'); return; }
 
   recipeIds.forEach(rid => {
     const recipe = state.recipes.find(r => r.id === rid);
     if (!recipe) return;
-    if (recipe.tags.some(t => /eat out/i.test(t))) { addEatOutItem(recipe); return; } // eat-out meals get a price line, not ingredients
+    const qty = counts[rid];
+    if (recipe.tags.some(t => /eat out/i.test(t))) { addEatOutItem(recipe, qty); return; } // eat-out meals get a price line, not ingredients
     recipe.ingredients.forEach(ing => {
-      addGroceryItem(ing.name, ing.amount, ing.unit, recipe.name);
+      const amt = parseFloat(ing.amount);
+      const scaled = isNaN(amt) ? ing.amount : trimNum(amt * qty);
+      addGroceryItem(ing.name, scaled, ing.unit, recipe.name);
     });
   });
 
@@ -959,10 +966,21 @@ function categorize(name) {
   return 'Other';
 }
 
+// Format a number without trailing zeros, e.g. 1.5 -> "1.5", 2.0 -> "2".
+function trimNum(n) {
+  return String(+n.toFixed(2));
+}
+
 function addGroceryItem(name, amount, unit, source, category) {
   const gname = genericizeName(name);
-  const existing = state.grocery.find(g => g.name.toLowerCase() === gname.toLowerCase() && !g.checked);
-  if (existing) return;
+  // Same item + same unit = one line; sum the amounts when both are numeric.
+  const existing = state.grocery.find(g =>
+    g.name.toLowerCase() === gname.toLowerCase() && g.unit === unit && !g.checked);
+  if (existing) {
+    const a = parseFloat(existing.amount), b = parseFloat(amount);
+    if (!isNaN(a) && !isNaN(b)) existing.amount = trimNum(a + b);
+    return;
+  }
   state.grocery.push({
     id: uid(),
     name: gname,
@@ -974,11 +992,13 @@ function addGroceryItem(name, amount, unit, source, category) {
   });
 }
 
-// Add an eat-out meal to the grocery list under "Eat Out", showing its price
-// where the quantity normally goes ($0 / provided by work renders as "(work)").
-function addEatOutItem(recipe) {
+// Add an eat-out meal to the grocery list under "Eat Out", showing its total
+// price (price × times eaten) where the quantity goes. $0 = provided by work.
+function addEatOutItem(recipe, qty = 1) {
   const price = eatOutPrice(recipe);
-  addGroceryItem(recipe.name, formatPrice(price), price > 0 ? '' : '(work)', recipe.name, 'Eat Out');
+  let note = qty > 1 ? `×${qty}` : '';
+  if (price === 0) note = note ? `${note}, work` : 'work';
+  addGroceryItem(recipe.name, formatPrice(price * qty), note ? `(${note})` : '', recipe.name, 'Eat Out');
 }
 
 window.addToGroceryFromRecipe = function(id) {
