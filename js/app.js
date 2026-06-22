@@ -55,16 +55,7 @@ function render_dashboard() {
   const todayKey = getTodayKey();
   const weekKey = getWeekKey();
   const todayMeals = state.mealPlan.weeks?.[weekKey]?.[todayKey] ?? {};
-  let todayMacros = { calories: 0, protein: 0, carbs: 0, fat: 0 };
-  Object.values(todayMeals).flat().forEach(rid => {
-    const recipe = state.recipes.find(r => r.id === rid);
-    if (recipe) {
-      todayMacros.calories += recipe.macros.calories;
-      todayMacros.protein  += recipe.macros.protein;
-      todayMacros.carbs    += recipe.macros.carbs;
-      todayMacros.fat      += recipe.macros.fat;
-    }
-  });
+  const todayMacros = dayMacros(todayMeals);
 
   const lbsTo = p.goalWeight;
   const lbsFrom = p.currentWeight;
@@ -759,12 +750,32 @@ function mealMoney(recipe) {
   return isEatOutRecipe(recipe) ? '💲 ' : '';
 }
 
+// A meal slot is either a recipe-id string (1 serving) or { id, servings }.
+function slotId(v) { return typeof v === 'string' ? v : v?.id; }
+function slotServings(v) { return (v && typeof v === 'object' && v.servings) ? v.servings : 1; }
+
+// Sum macros for a day's slots, accounting for servings.
+function dayMacros(day) {
+  const t = { calories: 0, protein: 0, carbs: 0, fat: 0 };
+  Object.values(day ?? {}).forEach(v => {
+    const r = state.recipes.find(x => x.id === slotId(v));
+    if (!r) return;
+    const s = slotServings(v);
+    t.calories += r.macros.calories * s;
+    t.protein += r.macros.protein * s;
+    t.carbs += r.macros.carbs * s;
+    t.fat += r.macros.fat * s;
+  });
+  return t;
+}
+
 // A "what to cook" summary for the week: each cookable (non-eat-out) recipe and
 // how many servings to make. Returns '' when there's nothing to prep.
 function prepListHTML(weekData) {
   const counts = {};
-  Object.values(weekData).forEach(day => Object.values(day).flat().forEach(rid => {
-    counts[rid] = (counts[rid] ?? 0) + 1;
+  Object.values(weekData).forEach(day => Object.values(day).forEach(v => {
+    const id = slotId(v);
+    if (id) counts[id] = (counts[id] ?? 0) + slotServings(v);
   }));
   const items = Object.keys(counts)
     .map(rid => ({ recipe: state.recipes.find(r => r.id === rid), qty: counts[rid] }))
@@ -805,13 +816,7 @@ function render_mealplan() {
 
   const dailyTotals = {};
   dayLabels.forEach(({ key }) => {
-    const meals = weekData[key] ?? {};
-    let cal = 0, pro = 0, carb = 0, fat = 0;
-    Object.values(meals).flat().forEach(rid => {
-      const r = state.recipes.find(r => r.id === rid);
-      if (r) { cal += r.macros.calories; pro += r.macros.protein; carb += r.macros.carbs; fat += r.macros.fat; }
-    });
-    dailyTotals[key] = { calories: cal, protein: pro, carbs: carb, fat: fat };
+    dailyTotals[key] = dayMacros(weekData[key]);
   });
 
   const weekStr = weekKey + ' – ' + new Date(new Date(weekKey).setDate(new Date(weekKey).getDate() + 6)).toISOString().slice(0, 10);
@@ -848,7 +853,9 @@ function render_mealplan() {
         </div>
       </div>
       ${MEAL_KEYS.map((mk, mi) => {
-        const rid = dayMeals[mk];
+        const slot = dayMeals[mk];
+        const rid = slotId(slot);
+        const srv = slotServings(slot);
         const recipe = rid ? state.recipes.find(r => r.id === rid) : null;
         return `
           <div class="mobile-meal-row">
@@ -856,9 +863,9 @@ function render_mealplan() {
               <span>${MEALS[mi]}</span>
               ${recipe ? `<button class="btn btn-secondary btn-sm" style="min-height:0;padding:3px 8px" onclick="openMealPicker('${weekKey}','${selDay}','${mk}')">✏️ Edit</button>` : ''}
             </div>
-            <div class="mobile-meal-body ${recipe ? '' : 'empty'}" ${recipe ? `style="${mealTint(recipe)}"` : ''} onclick="${recipe ? `viewRecipe('${rid}')` : `openMealPicker('${weekKey}','${selDay}','${mk}')`}">
+            <div class="mobile-meal-body ${recipe ? '' : 'empty'}" ${recipe ? `style="${mealTint(recipe)}"` : ''} onclick="${recipe ? `viewRecipe('${rid}', ${srv})` : `openMealPicker('${weekKey}','${selDay}','${mk}')`}">
               ${recipe
-                ? `<div style="flex:1"><div class="mobile-meal-name">${mealMoney(recipe)}${esc(recipe.name)}</div><div class="mobile-meal-macros">${recipe.macros.calories} cal · ${recipe.macros.protein}g protein · ⏱ ${recipe.prepTime}min</div></div><span style="color:var(--green);font-size:1.1rem">›</span>`
+                ? `<div style="flex:1"><div class="mobile-meal-name">${mealMoney(recipe)}${esc(recipe.name)}${srv > 1 ? ` <span style="color:var(--green);font-weight:700">×${srv}</span>` : ''}</div><div class="mobile-meal-macros">${recipe.macros.calories * srv} cal · ${recipe.macros.protein * srv}g protein · ⏱ ${recipe.prepTime}min</div></div><span style="color:var(--green);font-size:1.1rem">›</span>`
                 : `<span class="mobile-meal-add">+ Tap to add a meal</span>`}
             </div>
           </div>`;
@@ -884,13 +891,15 @@ function render_mealplan() {
           ${MEAL_KEYS.map((mk, mi) => `
             <div class="meal-label">${MEALS[mi]}</div>
             ${dayLabels.map(({ key }) => {
-              const rid = weekData?.[key]?.[mk];
+              const slot = weekData?.[key]?.[mk];
+              const rid = slotId(slot);
+              const srv = slotServings(slot);
               const recipe = rid ? state.recipes.find(r => r.id === rid) : null;
               return recipe
-                ? `<div class="meal-slot filled" style="${mealTint(recipe)}" onclick="viewRecipe('${rid}')">
+                ? `<div class="meal-slot filled" style="${mealTint(recipe)}" onclick="viewRecipe('${rid}', ${srv})">
                     <button class="meal-slot-edit" title="Change this meal" onclick="event.stopPropagation();openMealPicker('${weekKey}','${key}','${mk}')">✏️</button>
-                    <div class="meal-slot-recipe">${mealMoney(recipe)}${esc(recipe.name)}</div>
-                    <div class="meal-slot-macros">${recipe.macros.calories} cal · ${recipe.macros.protein}g P</div>
+                    <div class="meal-slot-recipe">${mealMoney(recipe)}${esc(recipe.name)}${srv > 1 ? ` ×${srv}` : ''}</div>
+                    <div class="meal-slot-macros">${recipe.macros.calories * srv} cal · ${recipe.macros.protein * srv}g P</div>
                   </div>`
                 : `<div class="meal-slot" onclick="openMealPicker('${weekKey}','${key}','${mk}')"><div class="meal-slot-add">+ Add</div></div>`;
             }).join('')}
@@ -1026,6 +1035,36 @@ window.autoGenerateWeek = function(mealPrep = false) {
   const prepPlan = {};
   if (mealPrep) MEAL_KEYS.forEach(mk => { prepPlan[mk] = prepPlanFor(mk); });
 
+  // Scale up portions until the day's calories reach (near) the target. Spreads
+  // extra servings across slots and won't overshoot by more than a small margin.
+  const target = calcTargets(state.profile);
+  function fillDayToTarget(dayData) {
+    const tol = target.calories * 0.06;
+    const MAX_SERV = 4;
+    for (let iter = 0; iter < 24; iter++) {
+      const tot = dayMacros(dayData);
+      if (tot.calories >= target.calories - tol) break;
+      let best = null, fallback = null;
+      Object.keys(dayData).forEach(mk => {
+        const entry = dayData[mk];
+        const r = state.recipes.find(x => x.id === slotId(entry));
+        if (!r || isEatOutRecipe(r) || slotServings(entry) >= MAX_SERV) return; // don't scale restaurant meals
+        const cal = r.macros.calories;
+        if (!fallback || cal < fallback.cal) fallback = { mk, cal };
+        if (tot.calories + cal > target.calories + tol) return; // would overshoot
+        const cur = slotServings(entry);
+        const sec = isProteinMode ? r.macros.protein : cal;
+        if (!best || cur < best.cur || (cur === best.cur && sec > best.sec)) best = { mk, cur, sec };
+      });
+      if (best) { dayData[best.mk].servings += 1; continue; }
+      // Every bump overshoots — take the smallest one only if it lands closer.
+      if (fallback && Math.abs(tot.calories + fallback.cal - target.calories) < Math.abs(tot.calories - target.calories)) {
+        dayData[fallback.mk].servings += 1; continue;
+      }
+      break;
+    }
+  }
+
   DAYS.forEach((d, dayIdx) => {
     const dayKey = d.toLowerCase();
     const dayData = {};
@@ -1034,11 +1073,11 @@ window.autoGenerateWeek = function(mealPrep = false) {
       // Thursday (dayIdx 3) lunch is always the poke bowl
       if (dayIdx === 3 && mk === 'lunch') {
         const pinned = state.recipes.find(r => r.id === THURSDAY_LUNCH_ID);
-        if (pinned) { dayData[mk] = THURSDAY_LUNCH_ID; used.add(THURSDAY_LUNCH_ID); return; }
+        if (pinned) { dayData[mk] = { id: THURSDAY_LUNCH_ID, servings: 1 }; used.add(THURSDAY_LUNCH_ID); return; }
       }
       if (mealPrep) {
         const pick = prepPlan[mk]?.[dayIdx];
-        if (pick) dayData[mk] = pick.id;
+        if (pick) dayData[mk] = { id: pick.id, servings: 1 };
         return;
       }
       const pool = poolFor(mk);
@@ -1046,8 +1085,9 @@ window.autoGenerateWeek = function(mealPrep = false) {
       const offset = dayIdx % pool.length;
       const rotated = [...pool.slice(offset), ...pool.slice(0, offset)];
       const pick = rotated.find(r => !used.has(r.id)) ?? rotated[0];
-      if (pick) { dayData[mk] = pick.id; used.add(pick.id); }
+      if (pick) { dayData[mk] = { id: pick.id, servings: 1 }; used.add(pick.id); }
     });
+    fillDayToTarget(dayData);
     state.mealPlan.weeks[weekKey][dayKey] = dayData;
   });
 
@@ -1059,10 +1099,11 @@ window.autoGenerateWeek = function(mealPrep = false) {
 window.generateGroceryFromPlan = function() {
   const weekKey = getWeekKey(mealPlanWeekOffset);
   const weekData = state.mealPlan.weeks?.[weekKey] ?? {};
-  // Count how many times each recipe is eaten this week so quantities scale.
+  // Sum total servings of each recipe this week so quantities scale.
   const counts = {};
-  Object.values(weekData).forEach(day => Object.values(day).flat().forEach(rid => {
-    counts[rid] = (counts[rid] ?? 0) + 1;
+  Object.values(weekData).forEach(day => Object.values(day).forEach(v => {
+    const id = slotId(v);
+    if (id) counts[id] = (counts[id] ?? 0) + slotServings(v);
   }));
   const recipeIds = Object.keys(counts);
 
