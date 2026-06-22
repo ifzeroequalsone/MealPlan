@@ -1,17 +1,18 @@
 import { getInitialState, saveState } from './state.js';
 import { ACTIVITY, calcTDEE, calcTargets, goalSummary, daysLeft } from './macros.js';
 
-// ── State ──────────────────────────────────────────────
+// ── State ──────────────────────────────────────────────────────
 let state = getInitialState();
 function persist() { saveState(state); }
 
-// ── Router ─────────────────────────────────────────────
+// ── Router ─────────────────────────────────────────────────────
 const pages = ['dashboard', 'goals', 'recipes', 'mealplan', 'grocery'];
 
 function navigate(id) {
   pages.forEach(p => {
     document.getElementById(`page-${p}`)?.classList.toggle('active', p === id);
     document.getElementById(`nav-${p}`)?.classList.toggle('active', p === id);
+    document.getElementById(`bnav-${p}`)?.classList.toggle('active', p === id);
   });
   render(id);
 }
@@ -23,7 +24,7 @@ document.querySelectorAll('[data-nav]').forEach(el => {
   });
 });
 
-// ── Helpers ────────────────────────────────────────────
+// ── Helpers ────────────────────────────────────────────────────
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
@@ -45,13 +46,12 @@ function calBar(value, max) {
     </div>`;
 }
 
-// ── Dashboard ──────────────────────────────────────────
+// ── Dashboard ──────────────────────────────────────────────────────
 function render_dashboard() {
   const p = state.profile;
   const targets = calcTargets(p);
   const dl = daysLeft(p);
 
-  // Sum today's meals
   const todayKey = getTodayKey();
   const weekKey = getWeekKey();
   const todayMeals = state.mealPlan.weeks?.[weekKey]?.[todayKey] ?? {};
@@ -66,23 +66,18 @@ function render_dashboard() {
     }
   });
 
-  const lbsTo = p.goalWeight;
-  const lbsFrom = p.currentWeight;
-  const totalDiff = Math.abs(lbsFrom - lbsTo);
-  const progressPct = totalDiff === 0 ? 100 : 0; // user updates current weight over time
-
-  const summary = goalSummary(p);
+  const totalDiff = Math.abs(p.currentWeight - p.goalWeight);
+  const progressPct = totalDiff === 0 ? 100 : 0;
   const tdee = calcTDEE(p);
-  const name = p.name ? `Hey, ${p.name}!` : 'Your Dashboard';
 
   document.getElementById('dash-content').innerHTML = `
     <div class="notice notice-${p.increaseMuscle ? 'success' : dl < 14 ? 'warn' : 'info'}">
       ${p.increaseMuscle ? '💪 Muscle-building mode active — eating at a caloric surplus.' :
         dl === 0 ? '🎯 Goal period has ended! Update your goals.' :
-        `🎯 ${summary} — <strong>${dl} days</strong> remaining`}
+        `🎯 ${goalSummary(p)} — <strong>${dl} days</strong> remaining`}
     </div>
 
-    <div class="grid-4" style="margin-bottom:16px">
+    <div class="grid-4 stats-row" style="margin-bottom:16px">
       <div class="stat-card green">
         <span class="stat-label">Target Calories</span>
         <span class="stat-value">${targets.calories}</span>
@@ -173,13 +168,12 @@ function render_dashboard() {
     </div>
   `;
 
-  // re-bind nav links inside the rendered content
   document.querySelectorAll('[data-nav]').forEach(el => {
     el.addEventListener('click', e => { e.preventDefault(); navigate(el.dataset.nav); });
   });
 }
 
-// ── Goals ──────────────────────────────────────────────
+// ── Goals ──────────────────────────────────────────────────────
 function render_goals() {
   const p = state.profile;
   const targets = calcTargets(p);
@@ -286,7 +280,6 @@ function render_goals() {
     </div>
   `;
 
-  // Live recalculate on any input change
   const inputs = ['g-name','g-age','g-gender','g-hft','g-hin','g-activity','g-cw','g-gw','g-weeks','g-muscle','g-start'];
   inputs.forEach(id => {
     const el = document.getElementById(id);
@@ -302,7 +295,6 @@ function liveRecalc() {
 }
 
 function renderTargetCards(targets, p) {
-  const tdee = calcTargets(p).tdee;
   return `
     <div class="grid-2" style="gap:10px;margin-bottom:12px">
       <div style="text-align:center;padding:12px;background:var(--green-light);border-radius:10px">
@@ -367,7 +359,7 @@ window.saveGoals = function() {
   render_goals();
 };
 
-// ── Recipes ────────────────────────────────────────────
+// ── Recipes ────────────────────────────────────────────────────
 function render_recipes(filter = '') {
   const recipes = filter
     ? state.recipes.filter(r => r.name.toLowerCase().includes(filter.toLowerCase()) || r.tags.some(t => t.toLowerCase().includes(filter.toLowerCase())))
@@ -553,41 +545,41 @@ window.saveRecipe = function(id, isNew) {
   showToast(isNew ? 'Recipe added!' : 'Recipe saved!');
 };
 
-// ── Meal Plan ──────────────────────────────────────────
+// ── Meal Plan ────────────────────────────────────────────────────
 const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const MEALS = ['Breakfast','Lunch','Dinner','Snack'];
 const MEAL_KEYS = ['breakfast','lunch','dinner','snack'];
 
 function getWeekKey(offset = 0) {
   const d = new Date();
-  d.setDate(d.getDate() - d.getDay() + 1 + offset * 7); // Monday
+  d.setDate(d.getDate() - d.getDay() + 1 + offset * 7);
   return d.toISOString().slice(0, 10);
 }
 
 function getTodayKey() {
-  const day = new Date().getDay(); // 0=Sun..6=Sat
+  const day = new Date().getDay();
   const dayIdx = day === 0 ? 6 : day - 1;
   return DAYS[dayIdx].toLowerCase();
 }
 
 let mealPlanWeekOffset = 0;
+let mealPlanSelectedDay = getTodayKey();
+
+function isMobile() { return window.innerWidth <= 768; }
 
 function render_mealplan() {
   const weekKey = getWeekKey(mealPlanWeekOffset);
   const weekData = state.mealPlan.weeks?.[weekKey] ?? {};
   const targets = calcTargets(state.profile);
 
-  // Build date labels
   const weekStart = new Date(weekKey);
   const dayLabels = DAYS.map((d, i) => {
     const dt = new Date(weekStart);
     dt.setDate(dt.getDate() + i);
     const isToday = dt.toDateString() === new Date().toDateString();
-    const label = `${d}<br><span style="font-size:0.7rem;font-weight:400">${dt.getMonth()+1}/${dt.getDate()}</span>`;
-    return { d, isToday, label, key: d.toLowerCase() };
+    return { d, isToday, key: d.toLowerCase(), date: `${dt.getMonth()+1}/${dt.getDate()}` };
   });
 
-  // Compute daily totals
   const dailyTotals = {};
   dayLabels.forEach(({ key }) => {
     const meals = weekData[key] ?? {};
@@ -600,50 +592,94 @@ function render_mealplan() {
   });
 
   const weekStr = weekKey + ' – ' + new Date(new Date(weekKey).setDate(new Date(weekKey).getDate() + 6)).toISOString().slice(0, 10);
-
-  document.getElementById('mealplan-content').innerHTML = `
-    <div class="week-nav">
+  const weekNav = `
+    <div class="week-nav" style="margin-bottom:14px">
       <button class="btn btn-secondary btn-sm" onclick="shiftWeek(-1)">← Prev</button>
-      <span style="font-weight:600;font-size:0.95rem">${weekStr}</span>
+      <span style="font-weight:600;font-size:0.9rem;flex:1;text-align:center">${weekStr}</span>
       <button class="btn btn-secondary btn-sm" onclick="shiftWeek(1)">Next →</button>
       ${mealPlanWeekOffset !== 0 ? `<button class="btn btn-outline btn-sm" onclick="shiftWeek(${-mealPlanWeekOffset})">Today</button>` : ''}
-      <button class="btn btn-primary btn-sm" onclick="generateGroceryFromPlan()" style="margin-left:auto">🛒 Generate Grocery List</button>
-    </div>
-    <div style="overflow-x:auto">
-      <div class="week-grid" style="margin-bottom:8px">
-        <div></div>
-        ${dayLabels.map(({ label, isToday }) => `<div class="week-day-header ${isToday ? 'today' : ''}">${label}</div>`).join('')}
+    </div>`;
 
-        ${MEAL_KEYS.map((mk, mi) => `
-          <div class="meal-label">${MEALS[mi]}</div>
-          ${dayLabels.map(({ key }) => {
-            const rid = weekData?.[key]?.[mk];
-            const recipe = rid ? state.recipes.find(r => r.id === rid) : null;
-            return recipe
-              ? `<div class="meal-slot filled" onclick="openMealPicker('${weekKey}','${key}','${mk}')">
-                  <button class="meal-slot-clear" onclick="event.stopPropagation();clearMeal('${weekKey}','${key}','${mk}')">✕</button>
-                  <div class="meal-slot-recipe">${esc(recipe.name)}</div>
-                  <div class="meal-slot-macros">${recipe.macros.calories} cal · ${recipe.macros.protein}g P</div>
-                </div>`
-              : `<div class="meal-slot" onclick="openMealPicker('${weekKey}','${key}','${mk}')">
-                  <div class="meal-slot-add">+ Add</div>
-                </div>`;
-          }).join('')}
+  if (isMobile()) {
+    if (!dayLabels.find(dl => dl.key === mealPlanSelectedDay)) {
+      mealPlanSelectedDay = getTodayKey();
+    }
+    const selDay = mealPlanSelectedDay;
+    const dayMeals = weekData[selDay] ?? {};
+    const dt = dailyTotals[selDay];
+    const pct = Math.round(dt.calories / targets.calories * 100);
+    const calColor = pct > 110 ? 'var(--red)' : pct > 90 ? 'var(--green)' : 'var(--text-muted)';
+
+    document.getElementById('mealplan-content').innerHTML = `
+      ${weekNav}
+      <div class="day-tabs">
+        ${dayLabels.map(({ d, key, isToday, date }) => `
+          <button class="day-tab ${isToday ? 'today' : ''} ${key === selDay ? 'active' : ''}" onclick="selectMealDay('${weekKey}','${key}')">${d}<br><span style="font-size:0.65rem;font-weight:400">${date}</span></button>
         `).join('')}
-
-        <div class="meal-label" style="font-size:0.7rem">TOTAL</div>
-        ${dayLabels.map(({ key }) => {
-          const t = dailyTotals[key];
-          const pct = Math.round(t.calories / targets.calories * 100);
-          const color = pct > 110 ? 'var(--red)' : pct > 90 ? 'var(--green)' : 'var(--text-muted)';
-          return `<div style="background:var(--surface);border-radius:8px;padding:6px 8px;text-align:center;font-size:0.72rem">
-            <div style="font-weight:700;color:${color}">${t.calories} cal</div>
-            <div style="color:var(--text-muted)">${t.protein}g P</div>
-          </div>`;
-        }).join('')}
       </div>
-    </div>
-  `;
+      <div class="mobile-day-total">
+        <span style="color:var(--text-muted);font-size:0.8rem">Day total</span>
+        <div style="text-align:right">
+          <strong style="color:${calColor}">${dt.calories} cal</strong>
+          <span style="color:var(--text-muted);font-size:0.8rem"> · ${dt.protein}g P · ${dt.carbs}g C · ${dt.fat}g F</span>
+        </div>
+      </div>
+      ${MEAL_KEYS.map((mk, mi) => {
+        const rid = dayMeals[mk];
+        const recipe = rid ? state.recipes.find(r => r.id === rid) : null;
+        return `
+          <div class="mobile-meal-row">
+            <div class="mobile-meal-header">
+              <span>${MEALS[mi]}</span>
+              ${recipe ? `<button class="btn btn-danger btn-sm" style="min-height:0;padding:3px 10px" onclick="clearMeal('${weekKey}','${selDay}','${mk}')">✕ Clear</button>` : ''}
+            </div>
+            <div class="mobile-meal-body ${recipe ? '' : 'empty'}" onclick="openMealPicker('${weekKey}','${selDay}','${mk}')">
+              ${recipe
+                ? `<div style="flex:1"><div class="mobile-meal-name">${esc(recipe.name)}</div><div class="mobile-meal-macros">${recipe.macros.calories} cal · ${recipe.macros.protein}g protein</div></div><span style="color:var(--green);font-size:1.2rem">›</span>`
+                : `<span style="color:var(--text-muted)">+ Tap to add a meal</span>`}
+            </div>
+          </div>`;
+      }).join('')}
+      <div style="margin-top:8px">
+        <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="generateGroceryFromPlan()">🛒 Generate Grocery List</button>
+      </div>`;
+  } else {
+    document.getElementById('mealplan-content').innerHTML = `
+      ${weekNav}
+      <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+        <button class="btn btn-primary btn-sm" onclick="generateGroceryFromPlan()">🛒 Generate Grocery List</button>
+      </div>
+      <div style="overflow-x:auto">
+        <div class="week-grid" style="margin-bottom:8px">
+          <div></div>
+          ${dayLabels.map(({ d, date, isToday }) => `<div class="week-day-header ${isToday ? 'today' : ''}">${d}<br><span style="font-size:0.7rem;font-weight:400">${date}</span></div>`).join('')}
+          ${MEAL_KEYS.map((mk, mi) => `
+            <div class="meal-label">${MEALS[mi]}</div>
+            ${dayLabels.map(({ key }) => {
+              const rid = weekData?.[key]?.[mk];
+              const recipe = rid ? state.recipes.find(r => r.id === rid) : null;
+              return recipe
+                ? `<div class="meal-slot filled" onclick="openMealPicker('${weekKey}','${key}','${mk}')">
+                    <button class="meal-slot-clear" onclick="event.stopPropagation();clearMeal('${weekKey}','${key}','${mk}')">✕</button>
+                    <div class="meal-slot-recipe">${esc(recipe.name)}</div>
+                    <div class="meal-slot-macros">${recipe.macros.calories} cal · ${recipe.macros.protein}g P</div>
+                  </div>`
+                : `<div class="meal-slot" onclick="openMealPicker('${weekKey}','${key}','${mk}')"><div class="meal-slot-add">+ Add</div></div>`;
+            }).join('')}
+          `).join('')}
+          <div class="meal-label" style="font-size:0.7rem">TOTAL</div>
+          ${dayLabels.map(({ key }) => {
+            const t = dailyTotals[key];
+            const pct = Math.round(t.calories / targets.calories * 100);
+            const color = pct > 110 ? 'var(--red)' : pct > 90 ? 'var(--green)' : 'var(--text-muted)';
+            return `<div style="background:var(--surface);border-radius:8px;padding:6px 8px;text-align:center;font-size:0.72rem">
+              <div style="font-weight:700;color:${color}">${t.calories} cal</div>
+              <div style="color:var(--text-muted)">${t.protein}g P</div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+  }
 }
 
 window.shiftWeek = function(delta) {
@@ -651,8 +687,12 @@ window.shiftWeek = function(delta) {
   render_mealplan();
 };
 
+window.selectMealDay = function(weekKey, dayKey) {
+  mealPlanSelectedDay = dayKey;
+  render_mealplan();
+};
+
 window.openMealPicker = function(weekKey, dayKey, mealKey) {
-  const current = state.mealPlan.weeks?.[weekKey]?.[dayKey]?.[mealKey];
   const mealLabel = MEALS[MEAL_KEYS.indexOf(mealKey)];
   const dayLabel = dayKey.charAt(0).toUpperCase() + dayKey.slice(1);
   openModal(`${dayLabel} — ${mealLabel}`, `
@@ -671,9 +711,9 @@ window.openMealPicker = function(weekKey, dayKey, mealKey) {
 function mealPickerList(recipes, weekKey, dayKey, mealKey) {
   if (recipes.length === 0) return '<div style="color:var(--text-muted);text-align:center;padding:24px">No recipes found</div>';
   return recipes.map(r => `
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-radius:8px;cursor:pointer;border:1.5px solid var(--border);margin-bottom:6px;transition:border-color 0.1s" onmouseover="this.style.borderColor='var(--green)'" onmouseout="this.style.borderColor='var(--border)'" onclick="assignMeal('${weekKey}','${dayKey}','${mealKey}','${r.id}')">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;border-radius:8px;cursor:pointer;border:1.5px solid var(--border);margin-bottom:6px;transition:border-color 0.1s" onmouseover="this.style.borderColor='var(--green)'" onmouseout="this.style.borderColor='var(--border)'" onclick="assignMeal('${weekKey}','${dayKey}','${mealKey}','${r.id}')">
       <div>
-        <div style="font-weight:600;font-size:0.9rem">${esc(r.name)}</div>
+        <div style="font-weight:600;font-size:0.92rem">${esc(r.name)}</div>
         <div style="font-size:0.75rem;color:var(--text-muted)">${r.macros.calories} cal · ${r.macros.protein}g protein · ⏱ ${r.prepTime}min</div>
       </div>
       <span class="btn btn-primary btn-sm">Select</span>
@@ -726,7 +766,7 @@ window.generateGroceryFromPlan = function() {
   showToast(`Grocery list updated from ${recipeIds.size} recipe(s)!`);
 };
 
-// ── Grocery ────────────────────────────────────────────
+// ── Grocery ────────────────────────────────────────────────────
 const GROCERY_CATS = ['Produce', 'Meat & Fish', 'Dairy & Eggs', 'Grains & Bread', 'Pantry', 'Frozen', 'Beverages', 'Other'];
 
 function categorize(name) {
@@ -743,15 +783,9 @@ function categorize(name) {
 
 function addGroceryItem(name, amount, unit, source) {
   const existing = state.grocery.find(g => g.name.toLowerCase() === name.toLowerCase() && !g.checked);
-  if (existing) {
-    // just note source, don't duplicate amounts (units may differ)
-    return;
-  }
+  if (existing) return;
   state.grocery.push({
-    id: uid(),
-    name,
-    amount,
-    unit,
+    id: uid(), name, amount, unit,
     category: categorize(name),
     checked: false,
     source: source ?? '',
@@ -780,7 +814,6 @@ function render_grocery() {
     return;
   }
 
-  // Group unchecked by category
   const byCat = {};
   GROCERY_CATS.forEach(c => byCat[c] = []);
   unchecked.forEach(g => {
@@ -889,7 +922,7 @@ window.clearAll = function() {
   }
 };
 
-// ── Modal ──────────────────────────────────────────────
+// ── Modal ────────────────────────────────────────────────────
 function openModal(title, body, actions = []) {
   document.getElementById('modal-title').textContent = title;
   document.getElementById('modal-body').innerHTML = body;
@@ -906,7 +939,7 @@ document.getElementById('modal-overlay').addEventListener('click', e => {
   if (e.target === e.currentTarget) closeModal();
 });
 
-// ── Toast ──────────────────────────────────────────────
+// ── Toast ────────────────────────────────────────────────────
 function showToast(msg, type = 'success') {
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -915,7 +948,7 @@ function showToast(msg, type = 'success') {
   setTimeout(() => t.classList.remove('show'), 2800);
 }
 
-// ── Render dispatcher ──────────────────────────────────
+// ── Render dispatcher ──────────────────────────────────────────────
 function render(page) {
   if (page === 'dashboard') render_dashboard();
   else if (page === 'goals') render_goals();
@@ -928,5 +961,5 @@ function render(page) {
   else if (page === 'grocery') render_grocery();
 }
 
-// ── Boot ───────────────────────────────────────────────
+// ── Boot ──────────────────────────────────────────────────────
 navigate('dashboard');
