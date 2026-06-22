@@ -445,6 +445,86 @@ function recipeCard(r) {
     </div>`;
 }
 
+// Step-by-step directions for the built-in recipes, keyed by id so they apply
+// even to recipes already saved in localStorage. A recipe's own `directions`
+// array (e.g. user-created) takes precedence.
+const DIRECTIONS_BY_ID = {
+  r1: [
+    'Season the chicken breast with garlic powder, salt, and pepper.',
+    'Heat olive oil in a pan over medium-high; cook chicken 6–7 min per side until 165°F. Rest, then slice.',
+    'Steam or microwave the broccoli until tender-crisp.',
+    'Add the cooked brown rice to a bowl and top with sliced chicken and broccoli.',
+  ],
+  r2: [
+    'Spoon half the Greek yogurt into a glass or bowl.',
+    'Layer with half the blueberries and granola.',
+    'Add the remaining yogurt, then the rest of the blueberries and granola.',
+    'Drizzle with honey and serve.',
+  ],
+  r3: [
+    'Drain the tuna and mix with Greek yogurt, Dijon mustard, and chopped celery; season with salt and pepper.',
+    'Lay the spinach over the tortilla.',
+    'Spoon the tuna salad on top.',
+    'Roll up tightly and slice in half.',
+  ],
+  r4: [
+    'Sauté the bell pepper, mushrooms, and spinach in an olive-oil-sprayed pan until soft.',
+    'Pour in the egg whites and cook over medium heat until the edges set.',
+    'Sprinkle feta over one half, fold the omelette, and cook 1 more minute.',
+  ],
+  r5: [
+    'Add almond milk, banana, protein powder, peanut butter, and ice to a blender.',
+    'Blend until smooth, about 30–45 seconds.',
+    'Pour into a glass and serve.',
+  ],
+  r6: [
+    'Combine the cooked quinoa, chickpeas, cucumber, and cherry tomatoes in a bowl.',
+    'Whisk the lemon juice with olive oil, salt, and pepper.',
+    'Toss the salad with the dressing and top with crumbled feta.',
+  ],
+  r7: [
+    'Mix the ground turkey with egg, minced garlic, and Italian seasoning; form into meatballs.',
+    'Cook the meatballs in a pan over medium heat until browned and cooked through, 12–15 min.',
+    'Add the marinara and simmer 5 min.',
+    'Warm the spiralized zucchini 2–3 min, then top with meatballs and sauce.',
+  ],
+  r8: [
+    'Stir together the rolled oats, almond milk, chia seeds, and protein powder in a jar.',
+    'Cover and refrigerate overnight (at least 4 hours).',
+    'In the morning, top with strawberries and almond butter.',
+  ],
+  tj1: ['Remove the film lid.', 'Microwave 2.5–3 min, stirring halfway through.', 'Let stand 1 min, then enjoy.'],
+  tj2: ['Microwave the chicken strips 60–90 sec, or pan-fry 3–4 min until warmed through.'],
+  tj3: ['Heat the meatballs in a pan with sauce, or microwave 1.5–2 min until hot.'],
+  tj4: ['Empty into a pan and heat over medium 5–6 min (or microwave ~3 min), stirring occasionally.', 'Serve over rice.'],
+  tj5: ['Pan-fry the patty 3–4 min per side, or microwave about 1.5 min.'],
+  tj6: ['Heat in a pan over medium 5 min (or microwave ~3 min), stirring.', 'Serve with rice or naan.'],
+  tj7: ['Bake or air-fry the chicken per package, about 12–15 min.', 'Toss with the orange sauce and serve.'],
+  ps1: ['Add the water or milk and protein powder to a shaker.', 'Shake 20–30 sec until smooth.'],
+  ps2: ['Add almond milk, banana, Greek yogurt, protein powder, and ice to a blender.', 'Blend until smooth and serve.'],
+  ps3: ['Add the almond milk and casein powder to a shaker or blender.', 'Mix until smooth and drink before bed.'],
+  co1: [
+    'Order a burrito bowl.',
+    'Choose white rice and pinto beans.',
+    'Add grilled chicken.',
+    'Top with fajita veggies, romaine, and pico de gallo.',
+  ],
+  co2: [
+    'Order a double-protein bowl with chicken and steak.',
+    'Choose white rice and pinto beans.',
+    'Top with fajita veggies, romaine, and pico de gallo.',
+  ],
+  po1: [
+    'Order a poke bowl on a sushi-rice base.',
+    'Add ahi tuna, edamame, cucumber, avocado, and seaweed salad.',
+    'Finish with soy sauce.',
+  ],
+};
+
+function recipeDirections(recipe) {
+  return (recipe.directions && recipe.directions.length) ? recipe.directions : (DIRECTIONS_BY_ID[recipe.id] ?? []);
+}
+
 // Recipes don't store directions, so link out to a web search for them.
 function directionsUrl(recipe) {
   return 'https://www.google.com/search?q=' + encodeURIComponent(`${recipe.name} recipe directions`);
@@ -485,7 +565,17 @@ window.viewRecipe = function(id) {
     </div>
     <div class="divider"></div>
     <h4 style="font-size:0.9rem;font-weight:700;margin-bottom:10px">Directions</h4>
-    <a href="${directionsUrl(r)}" target="_blank" rel="noopener" class="btn btn-outline" style="width:100%;justify-content:center">🔗 Find directions for ${esc(r.name)}</a>
+    ${(() => {
+      const steps = recipeDirections(r);
+      if (steps.length) {
+        return `
+          <ol style="margin:0 0 12px;padding-left:20px;display:flex;flex-direction:column;gap:7px;font-size:0.9rem;line-height:1.4">
+            ${steps.map(s => `<li>${esc(s)}</li>`).join('')}
+          </ol>
+          <a href="${directionsUrl(r)}" target="_blank" rel="noopener" style="font-size:0.82rem;color:var(--green);font-weight:600;text-decoration:none">🔗 See other versions online →</a>`;
+      }
+      return `<a href="${directionsUrl(r)}" target="_blank" rel="noopener" class="btn btn-outline" style="width:100%;justify-content:center">🔗 Find directions for ${esc(r.name)}</a>`;
+    })()}
   `, [
     { label: '🛒 Add to Grocery', cls: 'btn-primary', onclick: `addToGroceryFromRecipe('${id}');closeModal()` },
     { label: '✏️ Edit Recipe', cls: 'btn-secondary', onclick: `closeModal();editRecipe('${id}')` },
