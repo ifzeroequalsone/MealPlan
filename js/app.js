@@ -445,6 +445,11 @@ function recipeCard(r) {
     </div>`;
 }
 
+// Recipes don't store directions, so link out to a web search for them.
+function directionsUrl(recipe) {
+  return 'https://www.google.com/search?q=' + encodeURIComponent(`${recipe.name} recipe directions`);
+}
+
 function tagColor(tag) {
   const t = tag.toLowerCase();
   if (t.includes('protein') || t.includes('chicken') || t.includes('turkey')) return 'blue';
@@ -478,6 +483,9 @@ window.viewRecipe = function(id) {
           <span style="color:var(--text-muted);font-weight:600">${esc(ing.amount)} ${esc(ing.unit)}</span>
         </div>`).join('')}
     </div>
+    <div class="divider"></div>
+    <h4 style="font-size:0.9rem;font-weight:700;margin-bottom:10px">Directions</h4>
+    <a href="${directionsUrl(r)}" target="_blank" rel="noopener" class="btn btn-outline" style="width:100%;justify-content:center">🔗 Find directions for ${esc(r.name)}</a>
   `, [
     { label: '🛒 Add to Grocery', cls: 'btn-primary', onclick: `addToGroceryFromRecipe('${id}');closeModal()` },
     { label: '✏️ Edit Recipe', cls: 'btn-secondary', onclick: `closeModal();editRecipe('${id}')` },
