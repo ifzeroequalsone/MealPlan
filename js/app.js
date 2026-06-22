@@ -971,8 +971,57 @@ function trimNum(n) {
   return String(+n.toFixed(2));
 }
 
+function roundUpTo(value, step) {
+  return Math.ceil(value / step) * step;
+}
+
+// Canonicalize units so plural/variant spellings sum into one line.
+const UNIT_ALIASES = {
+  cups: 'cup', tbsps: 'tbsp', tbs: 'tbsp', tablespoon: 'tbsp', tablespoons: 'tbsp',
+  tsps: 'tsp', teaspoon: 'tsp', teaspoons: 'tsp', ounce: 'oz', ounces: 'oz',
+  cloves: 'clove', pieces: 'piece', slices: 'slice', sprays: 'spray',
+  servings: 'serving', scoops: 'scoop', bowls: 'bowl', patties: 'patty',
+  pounds: 'lb', lbs: 'lb', pound: 'lb', cans: 'can',
+};
+function normalizeUnit(unit) {
+  const u = String(unit ?? '').trim().toLowerCase();
+  return UNIT_ALIASES[u] ?? u;
+}
+
+// Pluralize a unit for display when the amount isn't exactly 1.
+const UNIT_PLURALS = {
+  cup: 'cups', clove: 'cloves', piece: 'pieces', slice: 'slices',
+  serving: 'servings', scoop: 'scoops', can: 'cans', patty: 'patties',
+  bowl: 'bowls', lb: 'lbs',
+};
+function displayUnit(amount, unit) {
+  const n = parseFloat(amount);
+  return (!isNaN(n) && n !== 1 && UNIT_PLURALS[unit]) ? UNIT_PLURALS[unit] : unit;
+}
+
+// Convert summed recipe amounts toward how you'd actually buy the item. First
+// match wins; anything unmatched stays in its recipe unit. Trader Joe's items
+// are sold as packages, so they're left alone.
+const PURCHASE_RULES = [
+  { match: /canned tuna/i, when: u => u === 'oz', apply: amt => ({ amount: trimNum(Math.max(1, Math.ceil(amt / 5))), unit: 'can' }) },
+  { match: /chicken|turkey|beef|steak|pork|salmon|shrimp/i, when: u => u === 'oz', apply: amt => ({ amount: trimNum(roundUpTo(amt / 16, 0.25)), unit: 'lb' }) },
+];
+function purchaseQty(name, amount, unit) {
+  const amt = parseFloat(amount);
+  if (isNaN(amt) || /trader joe/i.test(name)) return { amount, unit };
+  const rule = PURCHASE_RULES.find(r => r.match.test(name) && r.when(normalizeUnit(unit)));
+  return rule ? rule.apply(amt) : { amount, unit };
+}
+
+// Final display quantity: convert to purchase units, then pluralize.
+function shoppingQty(g) {
+  const { amount, unit } = purchaseQty(g.name, g.amount, g.unit);
+  return { amount, unit: displayUnit(amount, unit) };
+}
+
 function addGroceryItem(name, amount, unit, source, category) {
   const gname = genericizeName(name);
+  unit = normalizeUnit(unit);
   // Same item + same unit = one line; sum the amounts when both are numeric.
   const existing = state.grocery.find(g =>
     g.name.toLowerCase() === gname.toLowerCase() && g.unit === unit && !g.checked);
@@ -1068,11 +1117,12 @@ function render_grocery() {
 }
 
 function groceryItemHTML(g) {
+  const { amount, unit } = shoppingQty(g);
   return `
     <div class="grocery-item ${g.checked ? 'checked' : ''}" id="gi-${g.id}">
       <input type="checkbox" ${g.checked ? 'checked' : ''} onchange="toggleGrocery('${g.id}')">
       <span class="grocery-text">${esc(g.name)}</span>
-      <span class="grocery-amount">${esc(g.amount)} ${esc(g.unit)}</span>
+      <span class="grocery-amount">${esc(amount)} ${esc(unit)}</span>
       <button class="grocery-del" onclick="deleteGrocery('${g.id}')">✕</button>
     </div>`;
 }
@@ -1146,7 +1196,8 @@ window.copyGrocery = async function() {
   items.forEach(g => { (byCat[g.category] ?? byCat['Other']).push(g); });
   const text = GROCERY_CATS.filter(c => byCat[c].length > 0).map(cat =>
     `${cat}\n` + byCat[cat].map(g => {
-      const qty = [g.amount, g.unit].filter(Boolean).join(' ').trim();
+      const s = shoppingQty(g);
+      const qty = [s.amount, s.unit].filter(Boolean).join(' ').trim();
       return `- ${g.name}${qty ? ` — ${qty}` : ''}`;
     }).join('\n')
   ).join('\n\n');
