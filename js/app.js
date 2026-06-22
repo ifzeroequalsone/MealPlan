@@ -1,11 +1,11 @@
 import { getInitialState, saveState } from './state.js';
 import { ACTIVITY, calcTDEE, calcTargets, goalSummary, daysLeft } from './macros.js';
 
-// ── State ──────────────────────────────────────────────────────
+// ── State ──────────────────────────────────────────────
 let state = getInitialState();
 function persist() { saveState(state); }
 
-// ── Router ─────────────────────────────────────────────────────
+// ── Router ─────────────────────────────────────────────
 const pages = ['dashboard', 'goals', 'recipes', 'mealplan', 'grocery'];
 
 function navigate(id) {
@@ -24,7 +24,7 @@ document.querySelectorAll('[data-nav]').forEach(el => {
   });
 });
 
-// ── Helpers ────────────────────────────────────────────────────
+// ── Helpers ────────────────────────────────────────────
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
@@ -46,12 +46,13 @@ function calBar(value, max) {
     </div>`;
 }
 
-// ── Dashboard ──────────────────────────────────────────────────────
+// ── Dashboard ──────────────────────────────────────────
 function render_dashboard() {
   const p = state.profile;
   const targets = calcTargets(p);
   const dl = daysLeft(p);
 
+  // Sum today's meals
   const todayKey = getTodayKey();
   const weekKey = getWeekKey();
   const todayMeals = state.mealPlan.weeks?.[weekKey]?.[todayKey] ?? {};
@@ -66,15 +67,22 @@ function render_dashboard() {
     }
   });
 
-  const totalDiff = Math.abs(p.currentWeight - p.goalWeight);
-  const progressPct = totalDiff === 0 ? 100 : 0;
+  const lbsTo = p.goalWeight;
+  const lbsFrom = p.currentWeight;
+  const totalDiff = Math.abs(lbsFrom - lbsTo);
+  const progressPct = totalDiff === 0 ? 100 : 0; // user updates current weight over time
+
+  const proteinGap = Math.max(0, targets.protein - todayMacros.protein);
+  const summary = goalSummary(p);
   const tdee = calcTDEE(p);
+  const name = p.name ? `Hey, ${p.name}!` : 'Your Dashboard';
 
   document.getElementById('dash-content').innerHTML = `
-    <div class="notice notice-${p.increaseMuscle ? 'success' : dl < 14 ? 'warn' : 'info'}">
+    <div class="notice notice-${p.increaseMuscle ? 'success' : p.bulkCut ? 'info' : dl < 14 ? 'warn' : 'info'}">
       ${p.increaseMuscle ? '💪 Muscle-building mode active — eating at a caloric surplus.' :
+        p.bulkCut ? '⚡ Bulk+Cut mode — calorie deficit with elevated protein for body recomposition.' :
         dl === 0 ? '🎯 Goal period has ended! Update your goals.' :
-        `🎯 ${goalSummary(p)} — <strong>${dl} days</strong> remaining`}
+        `🎯 ${summary} — <strong>${dl} days</strong> remaining`}
     </div>
 
     <div class="grid-4 stats-row" style="margin-bottom:16px">
@@ -112,6 +120,7 @@ function render_dashboard() {
           &nbsp;·&nbsp;
           <a href="#" data-nav="mealplan" style="color:var(--green)">Open Planner →</a>
         </div>
+        ${proteinGap > 10 ? `<div style="margin-top:10px;padding:8px 12px;background:var(--blue-light);border-radius:8px;display:flex;align-items:center;justify-content:space-between;gap:8px"><span style="color:var(--blue);font-size:0.82rem">💪 ${proteinGap}g protein still needed today</span><button class="btn btn-primary btn-sm" onclick="addProteinShakeToday()">+ Shake</button></div>` : ''}
       </div>
 
       <div class="card">
@@ -168,12 +177,13 @@ function render_dashboard() {
     </div>
   `;
 
+  // re-bind nav links inside the rendered content
   document.querySelectorAll('[data-nav]').forEach(el => {
     el.addEventListener('click', e => { e.preventDefault(); navigate(el.dataset.nav); });
   });
 }
 
-// ── Goals ──────────────────────────────────────────────────────
+// ── Goals ──────────────────────────────────────────────
 function render_goals() {
   const p = state.profile;
   const targets = calcTargets(p);
@@ -245,6 +255,13 @@ function render_goals() {
             </label>
             <label for="g-muscle" style="font-weight:600">💪 Muscle-Building Mode <span style="font-size:0.8rem;color:var(--text-muted);font-weight:400">(caloric surplus)</span></label>
           </div>
+          <div class="toggle-group" style="margin-top:8px">
+            <label class="toggle">
+              <input type="checkbox" id="g-bulkcut" ${p.bulkCut?'checked':''}>
+              <span class="toggle-slider"></span>
+            </label>
+            <label for="g-bulkcut" style="font-weight:600">⚡ Bulk+Cut Mode <span style="font-size:0.8rem;color:var(--text-muted);font-weight:400">(deficit + high protein recomp)</span></label>
+          </div>
         </div>
 
         <div style="display:flex;gap:10px">
@@ -280,11 +297,17 @@ function render_goals() {
     </div>
   `;
 
-  const inputs = ['g-name','g-age','g-gender','g-hft','g-hin','g-activity','g-cw','g-gw','g-weeks','g-muscle','g-start'];
+  // Live recalculate on any input change
+  const inputs = ['g-name','g-age','g-gender','g-hft','g-hin','g-activity','g-cw','g-gw','g-weeks','g-start'];
   inputs.forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('input', liveRecalc);
   });
+  // Toggles: mutually exclusive + live recalc
+  const muscleEl = document.getElementById('g-muscle');
+  const bulkcutEl = document.getElementById('g-bulkcut');
+  if (muscleEl) muscleEl.addEventListener('change', () => { if (muscleEl.checked) bulkcutEl.checked = false; liveRecalc(); });
+  if (bulkcutEl) bulkcutEl.addEventListener('change', () => { if (bulkcutEl.checked) muscleEl.checked = false; liveRecalc(); });
 }
 
 function liveRecalc() {
@@ -295,6 +318,7 @@ function liveRecalc() {
 }
 
 function renderTargetCards(targets, p) {
+  const tdee = calcTargets(p).tdee;
   return `
     <div class="grid-2" style="gap:10px;margin-bottom:12px">
       <div style="text-align:center;padding:12px;background:var(--green-light);border-radius:10px">
@@ -325,12 +349,12 @@ function renderTargetCards(targets, p) {
 function renderGoalSummary(p, targets) {
   const dl = daysLeft(p);
   const diff = p.currentWeight - p.goalWeight;
-  const lossPerWeek = p.increaseMuscle ? null : (Math.abs(diff) / p.goalWeeks).toFixed(1);
+  const lossPerWeek = (p.increaseMuscle || p.bulkCut) ? null : (Math.abs(diff) / p.goalWeeks).toFixed(1);
   return `
     <div style="display:flex;flex-direction:column;gap:8px;font-size:0.9rem">
-      <div style="display:flex;justify-content:space-between"><span style="color:var(--text-muted)">Mode</span><strong>${p.increaseMuscle ? '💪 Build Muscle' : diff > 0 ? '📉 Lose Weight' : diff < 0 ? '📈 Gain Weight' : '⚖️ Maintain'}</strong></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--text-muted)">Mode</span><strong>${p.increaseMuscle ? '💪 Build Muscle' : p.bulkCut ? '⚡ Bulk+Cut' : diff > 0 ? '📉 Lose Weight' : diff < 0 ? '📈 Gain Weight' : '⚖️ Maintain'}</strong></div>
       <div style="display:flex;justify-content:space-between"><span style="color:var(--text-muted)">Duration</span><strong>${p.goalWeeks} weeks (${dl} days left)</strong></div>
-      ${!p.increaseMuscle && diff !== 0 ? `<div style="display:flex;justify-content:space-between"><span style="color:var(--text-muted)">Rate</span><strong>${lossPerWeek} lbs / week</strong></div>` : ''}
+      ${(!p.increaseMuscle && !p.bulkCut && diff !== 0) ? `<div style="display:flex;justify-content:space-between"><span style="color:var(--text-muted)">Rate</span><strong>${lossPerWeek} lbs / week</strong></div>` : ''}
       <div style="display:flex;justify-content:space-between"><span style="color:var(--text-muted)">Calorie ${targets.calories < targets.tdee ? 'Deficit' : 'Surplus'}</span><strong>${Math.abs(targets.calories - targets.tdee)} kcal/day</strong></div>
       <div style="display:flex;justify-content:space-between"><span style="color:var(--text-muted)">Protein per lb</span><strong>${(targets.protein / p.currentWeight).toFixed(2)}g</strong></div>
     </div>`;
@@ -348,6 +372,7 @@ function readGoalForm() {
     goalWeight: parseFloat(document.getElementById('g-gw')?.value) || state.profile.goalWeight,
     goalWeeks: parseInt(document.getElementById('g-weeks')?.value) || state.profile.goalWeeks,
     increaseMuscle: document.getElementById('g-muscle')?.checked ?? state.profile.increaseMuscle,
+    bulkCut: document.getElementById('g-bulkcut')?.checked ?? state.profile.bulkCut,
     startDate: document.getElementById('g-start')?.value ?? state.profile.startDate,
   };
 }
@@ -359,18 +384,51 @@ window.saveGoals = function() {
   render_goals();
 };
 
-// ── Recipes ────────────────────────────────────────────────────
+window.addProteinShakeToday = function() {
+  const shake = state.recipes.find(r => r.tags.some(t => /protein shake/i.test(t)));
+  if (!shake) { showToast('No protein shake recipe found. Add one in Recipes!', 'warn'); return; }
+  const weekKey = getWeekKey();
+  const dayKey = getTodayKey();
+  if (!state.mealPlan.weeks) state.mealPlan.weeks = {};
+  if (!state.mealPlan.weeks[weekKey]) state.mealPlan.weeks[weekKey] = {};
+  if (!state.mealPlan.weeks[weekKey][dayKey]) state.mealPlan.weeks[weekKey][dayKey] = {};
+  const free = ['snack','breakfast','lunch','dinner'].find(s => !state.mealPlan.weeks[weekKey][dayKey][s]) ?? 'snack';
+  state.mealPlan.weeks[weekKey][dayKey][free] = shake.id;
+  persist();
+  render_dashboard();
+  showToast(`${shake.name} added to today's ${free}!`);
+};
+
+// ── Recipes ────────────────────────────────────────────
 function render_recipes(filter = '') {
-  const recipes = filter
-    ? state.recipes.filter(r => r.name.toLowerCase().includes(filter.toLowerCase()) || r.tags.some(t => t.toLowerCase().includes(filter.toLowerCase())))
-    : state.recipes;
+  let recipes = state.recipes;
+  if (recipeTagFilter) {
+    recipes = recipes.filter(r => r.tags.some(t => t.toLowerCase().includes(recipeTagFilter.toLowerCase())));
+  }
+  if (filter) {
+    recipes = recipes.filter(r => r.name.toLowerCase().includes(filter.toLowerCase()) || r.tags.some(t => t.toLowerCase().includes(filter.toLowerCase())));
+  }
+
+  const chips = [
+    { label: 'All', filter: '' },
+    { label: "🛒 Trader Joe's", filter: 'Trader' },
+    { label: '🥤 Protein Shakes', filter: 'Protein Shake' },
+    { label: '💪 High Protein', filter: 'High Protein' },
+    { label: '⚡ Quick', filter: 'Quick' },
+  ];
+  const filterChips = `<div class="filter-chips">${chips.map(c => `<button class="filter-chip ${recipeTagFilter === c.filter ? 'active' : ''}" onclick="setRecipeFilter('${c.filter}')">${c.label}</button>`).join('')}</div>`;
 
   const grid = recipes.length === 0
     ? `<div class="empty-state"><div class="icon">🍽️</div><p>No recipes found. Add one!</p></div>`
     : `<div class="recipe-grid">${recipes.map(recipeCard).join('')}</div>`;
 
-  document.getElementById('recipes-content').innerHTML = grid;
+  document.getElementById('recipes-content').innerHTML = filterChips + grid;
 }
+
+window.setRecipeFilter = function(tag) {
+  recipeTagFilter = tag;
+  render_recipes(document.getElementById('recipe-search')?.value ?? '');
+};
 
 function recipeCard(r) {
   return `
@@ -545,7 +603,7 @@ window.saveRecipe = function(id, isNew) {
   showToast(isNew ? 'Recipe added!' : 'Recipe saved!');
 };
 
-// ── Meal Plan ────────────────────────────────────────────────────
+// ── Meal Plan ──────────────────────────────────────────
 const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const MEALS = ['Breakfast','Lunch','Dinner','Snack'];
 const MEAL_KEYS = ['breakfast','lunch','dinner','snack'];
@@ -564,6 +622,7 @@ function getTodayKey() {
 
 let mealPlanWeekOffset = 0;
 let mealPlanSelectedDay = getTodayKey();
+let recipeTagFilter = '';
 
 function isMobile() { return window.innerWidth <= 768; }
 
@@ -618,7 +677,7 @@ function render_mealplan() {
         `).join('')}
       </div>
       <div class="mobile-day-total">
-        <span style="color:var(--text-muted);font-size:0.8rem">Day total</span>
+        <span style="color:var(--text-muted);font-size:0.8rem">Today's total</span>
         <div style="text-align:right">
           <strong style="color:${calColor}">${dt.calories} cal</strong>
           <span style="color:var(--text-muted);font-size:0.8rem"> · ${dt.protein}g P · ${dt.carbs}g C · ${dt.fat}g F</span>
@@ -631,22 +690,24 @@ function render_mealplan() {
           <div class="mobile-meal-row">
             <div class="mobile-meal-header">
               <span>${MEALS[mi]}</span>
-              ${recipe ? `<button class="btn btn-danger btn-sm" style="min-height:0;padding:3px 10px" onclick="clearMeal('${weekKey}','${selDay}','${mk}')">✕ Clear</button>` : ''}
+              ${recipe ? `<button class="btn btn-danger btn-sm" style="min-height:0;padding:3px 8px" onclick="clearMeal('${weekKey}','${selDay}','${mk}')">✕ Clear</button>` : ''}
             </div>
             <div class="mobile-meal-body ${recipe ? '' : 'empty'}" onclick="openMealPicker('${weekKey}','${selDay}','${mk}')">
               ${recipe
-                ? `<div style="flex:1"><div class="mobile-meal-name">${esc(recipe.name)}</div><div class="mobile-meal-macros">${recipe.macros.calories} cal · ${recipe.macros.protein}g protein</div></div><span style="color:var(--green);font-size:1.2rem">›</span>`
-                : `<span style="color:var(--text-muted)">+ Tap to add a meal</span>`}
+                ? `<div style="flex:1"><div class="mobile-meal-name">${esc(recipe.name)}</div><div class="mobile-meal-macros">${recipe.macros.calories} cal · ${recipe.macros.protein}g protein · ⏱ ${recipe.prepTime}min</div></div><span style="color:var(--green);font-size:1.1rem">›</span>`
+                : `<span class="mobile-meal-add">+ Tap to add a meal</span>`}
             </div>
           </div>`;
       }).join('')}
-      <div style="margin-top:8px">
+      <div style="margin-top:8px;display:flex;flex-direction:column;gap:8px">
+        <button class="btn btn-secondary" style="width:100%;justify-content:center" onclick="autoGenerateWeek()">⚡ Auto-Generate Week</button>
         <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="generateGroceryFromPlan()">🛒 Generate Grocery List</button>
       </div>`;
   } else {
     document.getElementById('mealplan-content').innerHTML = `
       ${weekNav}
-      <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:12px">
+        <button class="btn btn-secondary btn-sm" onclick="autoGenerateWeek()">⚡ Auto-Generate Week</button>
         <button class="btn btn-primary btn-sm" onclick="generateGroceryFromPlan()">🛒 Generate Grocery List</button>
       </div>
       <div style="overflow-x:auto">
@@ -693,6 +754,7 @@ window.selectMealDay = function(weekKey, dayKey) {
 };
 
 window.openMealPicker = function(weekKey, dayKey, mealKey) {
+  const current = state.mealPlan.weeks?.[weekKey]?.[dayKey]?.[mealKey];
   const mealLabel = MEALS[MEAL_KEYS.indexOf(mealKey)];
   const dayLabel = dayKey.charAt(0).toUpperCase() + dayKey.slice(1);
   openModal(`${dayLabel} — ${mealLabel}`, `
@@ -711,9 +773,9 @@ window.openMealPicker = function(weekKey, dayKey, mealKey) {
 function mealPickerList(recipes, weekKey, dayKey, mealKey) {
   if (recipes.length === 0) return '<div style="color:var(--text-muted);text-align:center;padding:24px">No recipes found</div>';
   return recipes.map(r => `
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;border-radius:8px;cursor:pointer;border:1.5px solid var(--border);margin-bottom:6px;transition:border-color 0.1s" onmouseover="this.style.borderColor='var(--green)'" onmouseout="this.style.borderColor='var(--border)'" onclick="assignMeal('${weekKey}','${dayKey}','${mealKey}','${r.id}')">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-radius:8px;cursor:pointer;border:1.5px solid var(--border);margin-bottom:6px;transition:border-color 0.1s" onmouseover="this.style.borderColor='var(--green)'" onmouseout="this.style.borderColor='var(--border)'" onclick="assignMeal('${weekKey}','${dayKey}','${mealKey}','${r.id}')">
       <div>
-        <div style="font-weight:600;font-size:0.92rem">${esc(r.name)}</div>
+        <div style="font-weight:600;font-size:0.9rem">${esc(r.name)}</div>
         <div style="font-size:0.75rem;color:var(--text-muted)">${r.macros.calories} cal · ${r.macros.protein}g protein · ⏱ ${r.prepTime}min</div>
       </div>
       <span class="btn btn-primary btn-sm">Select</span>
@@ -745,6 +807,48 @@ window.clearMeal = function(weekKey, dayKey, mealKey) {
   }
 };
 
+window.autoGenerateWeek = function() {
+  if (!confirm('Auto-generate will overwrite this week\'s meal plan. Continue?')) return;
+  const weekKey = getWeekKey(mealPlanWeekOffset);
+  const p = state.profile;
+  const isProteinMode = p.bulkCut || p.increaseMuscle;
+  if (!state.mealPlan.weeks) state.mealPlan.weeks = {};
+  state.mealPlan.weeks[weekKey] = {};
+
+  function poolFor(mk) {
+    const patterns = { breakfast: /breakfast/i, lunch: /lunch/i, dinner: /dinner/i, snack: /snack/i };
+    let pool = state.recipes.filter(r => r.tags.some(t => patterns[mk].test(t)));
+    if (pool.length === 0) pool = [...state.recipes];
+    if (isProteinMode && mk === 'snack') {
+      const shakes = pool.filter(r => r.tags.some(t => /protein shake/i.test(t)));
+      if (shakes.length > 0) pool = [...shakes, ...pool.filter(r => !r.tags.some(t => /protein shake/i.test(t)))];
+    }
+    if (isProteinMode) {
+      pool = [...pool].sort((a, b) => (b.macros.protein / Math.max(b.macros.calories, 1)) - (a.macros.protein / Math.max(a.macros.calories, 1)));
+    }
+    return pool;
+  }
+
+  DAYS.forEach((d, dayIdx) => {
+    const dayKey = d.toLowerCase();
+    const dayData = {};
+    const used = new Set();
+    MEAL_KEYS.forEach(mk => {
+      const pool = poolFor(mk);
+      if (!pool.length) return;
+      const offset = dayIdx % pool.length;
+      const rotated = [...pool.slice(offset), ...pool.slice(0, offset)];
+      const pick = rotated.find(r => !used.has(r.id)) ?? rotated[0];
+      if (pick) { dayData[mk] = pick.id; used.add(pick.id); }
+    });
+    state.mealPlan.weeks[weekKey][dayKey] = dayData;
+  });
+
+  persist();
+  render_mealplan();
+  showToast('Week auto-generated!');
+};
+
 window.generateGroceryFromPlan = function() {
   const weekKey = getWeekKey(mealPlanWeekOffset);
   const weekData = state.mealPlan.weeks?.[weekKey] ?? {};
@@ -766,13 +870,15 @@ window.generateGroceryFromPlan = function() {
   showToast(`Grocery list updated from ${recipeIds.size} recipe(s)!`);
 };
 
-// ── Grocery ────────────────────────────────────────────────────
+// ── Grocery ────────────────────────────────────────────
 const GROCERY_CATS = ['Produce', 'Meat & Fish', 'Dairy & Eggs', 'Grains & Bread', 'Pantry', 'Frozen', 'Beverages', 'Other'];
 
 function categorize(name) {
   const n = name.toLowerCase();
+  if (/trader joe/.test(n)) return 'Frozen';
+  if (/casein|whey|protein powder/.test(n)) return 'Dairy & Eggs';
   if (/chicken|turkey|beef|pork|salmon|tuna|fish|shrimp|egg/.test(n)) return 'Meat & Fish';
-  if (/milk|yogurt|cheese|butter|cream|whey|protein powder/.test(n)) return 'Dairy & Eggs';
+  if (/milk|yogurt|cheese|butter|cream/.test(n)) return 'Dairy & Eggs';
   if (/rice|oat|bread|tortilla|pasta|quinoa|granola|flour/.test(n)) return 'Grains & Bread';
   if (/apple|banana|berry|tomato|lettuce|spinach|broccoli|zucchini|cucumber|pepper|onion|garlic|lemon|lime|strawberry|blueberry|cherry/.test(n)) return 'Produce';
   if (/oil|sauce|vinegar|mustard|salt|pepper|spice|honey|soy|sriracha|powder/.test(n)) return 'Pantry';
@@ -783,9 +889,14 @@ function categorize(name) {
 
 function addGroceryItem(name, amount, unit, source) {
   const existing = state.grocery.find(g => g.name.toLowerCase() === name.toLowerCase() && !g.checked);
-  if (existing) return;
+  if (existing) {
+    return;
+  }
   state.grocery.push({
-    id: uid(), name, amount, unit,
+    id: uid(),
+    name,
+    amount,
+    unit,
     category: categorize(name),
     checked: false,
     source: source ?? '',
@@ -922,7 +1033,7 @@ window.clearAll = function() {
   }
 };
 
-// ── Modal ────────────────────────────────────────────────────
+// ── Modal ──────────────────────────────────────────────
 function openModal(title, body, actions = []) {
   document.getElementById('modal-title').textContent = title;
   document.getElementById('modal-body').innerHTML = body;
@@ -939,7 +1050,7 @@ document.getElementById('modal-overlay').addEventListener('click', e => {
   if (e.target === e.currentTarget) closeModal();
 });
 
-// ── Toast ────────────────────────────────────────────────────
+// ── Toast ──────────────────────────────────────────────
 function showToast(msg, type = 'success') {
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -948,7 +1059,7 @@ function showToast(msg, type = 'success') {
   setTimeout(() => t.classList.remove('show'), 2800);
 }
 
-// ── Render dispatcher ──────────────────────────────────────────────
+// ── Render dispatcher ──────────────────────────────────
 function render(page) {
   if (page === 'dashboard') render_dashboard();
   else if (page === 'goals') render_goals();
@@ -961,5 +1072,5 @@ function render(page) {
   else if (page === 'grocery') render_grocery();
 }
 
-// ── Boot ──────────────────────────────────────────────────────
+// ── Boot ───────────────────────────────────────────────
 navigate('dashboard');
