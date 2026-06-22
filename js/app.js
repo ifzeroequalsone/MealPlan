@@ -1034,6 +1034,7 @@ function render_grocery() {
         <strong>${unchecked.length}</strong> items remaining · <strong>${checked.length}</strong> done
       </div>
       <div style="display:flex;gap:8px">
+        <button class="btn btn-secondary btn-sm" onclick="copyGrocery()">📋 Copy</button>
         <button class="btn btn-secondary btn-sm" onclick="clearChecked()">Clear Done</button>
         <button class="btn btn-danger btn-sm" onclick="clearAll()">Clear All</button>
       </div>
@@ -1114,6 +1115,36 @@ window.clearAll = function() {
     state.grocery = [];
     persist();
     render_grocery();
+  }
+};
+
+window.copyGrocery = async function() {
+  const items = state.grocery.filter(g => !g.checked);
+  if (!items.length) { showToast('Nothing to copy — list is empty.', 'warn'); return; }
+  const byCat = {};
+  GROCERY_CATS.forEach(c => byCat[c] = []);
+  items.forEach(g => { (byCat[g.category] ?? byCat['Other']).push(g); });
+  const text = GROCERY_CATS.filter(c => byCat[c].length > 0).map(cat =>
+    `${cat}\n` + byCat[cat].map(g => {
+      const qty = [g.amount, g.unit].filter(Boolean).join(' ').trim();
+      return `- ${g.name}${qty ? ` — ${qty}` : ''}`;
+    }).join('\n')
+  ).join('\n\n');
+
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast('Grocery list copied!');
+  } catch {
+    // Fallback for browsers/contexts without the async clipboard API
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); showToast('Grocery list copied!'); }
+    catch { showToast('Copy failed — try selecting manually.', 'error'); }
+    document.body.removeChild(ta);
   }
 };
 
