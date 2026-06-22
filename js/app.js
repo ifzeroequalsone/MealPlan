@@ -890,10 +890,18 @@ window.generateGroceryFromPlan = function() {
 // ── Grocery ────────────────────────────────────────────
 const GROCERY_CATS = ['Produce', 'Meat & Fish', 'Dairy & Eggs', 'Grains & Bread', 'Pantry', 'Frozen', 'Beverages', 'Eat Out', 'Other'];
 
+// Collapse interchangeable ingredient variants onto a single shopping name.
+// First match wins.
+const CANONICAL_INGREDIENTS = [
+  [/protein powder/i, 'Protein powder'], // whey, casein, vanilla, plain → one line
+];
+
 // Turn recipe-specific ingredient names into generic shopping-list names,
 // e.g. "Brown rice (cooked)" → "Brown rice", "Greek yogurt (0%)" → "Greek yogurt".
 function genericizeName(name) {
-  return String(name).replace(/\s*\([^)]*\)/g, '').replace(/\s{2,}/g, ' ').trim();
+  const stripped = String(name).replace(/\s*\([^)]*\)/g, '').replace(/\s{2,}/g, ' ').trim();
+  const canon = CANONICAL_INGREDIENTS.find(([re]) => re.test(stripped));
+  return canon ? canon[1] : stripped;
 }
 
 function formatPrice(price) {
