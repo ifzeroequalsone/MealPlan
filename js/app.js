@@ -625,6 +625,34 @@ let recipeTagFilter = '';
 
 function isMobile() { return window.innerWidth <= 768; }
 
+// A "what to cook" summary for the week: each cookable (non-eat-out) recipe and
+// how many servings to make. Returns '' when there's nothing to prep.
+function prepListHTML(weekData) {
+  const counts = {};
+  Object.values(weekData).forEach(day => Object.values(day).flat().forEach(rid => {
+    counts[rid] = (counts[rid] ?? 0) + 1;
+  }));
+  const items = Object.keys(counts)
+    .map(rid => ({ recipe: state.recipes.find(r => r.id === rid), qty: counts[rid] }))
+    .filter(x => x.recipe && !x.recipe.tags.some(t => /eat out/i.test(t)))
+    .sort((a, b) => b.qty - a.qty || a.recipe.name.localeCompare(b.recipe.name));
+  if (!items.length) return '';
+
+  const rows = items.map(({ recipe, qty }) => `
+    <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">
+      <span style="background:var(--green);color:#fff;font-weight:700;font-size:0.8rem;border-radius:6px;padding:2px 8px;min-width:34px;text-align:center">${qty}×</span>
+      <span style="flex:1;font-weight:600;font-size:0.9rem">${esc(recipe.name)}</span>
+      <span style="color:var(--text-muted);font-size:0.75rem;white-space:nowrap">${recipe.macros.protein}g P · ⏱ ${recipe.prepTime}min</span>
+    </div>`).join('');
+  const totalServings = items.reduce((s, x) => s + x.qty, 0);
+  return `
+    <div class="card" style="margin-top:14px">
+      <div class="card-title">🍱 This Week's Prep List</div>
+      <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:6px">${items.length} recipe(s) · ${totalServings} servings to make</div>
+      ${rows}
+    </div>`;
+}
+
 function render_mealplan() {
   const weekKey = getWeekKey(mealPlanWeekOffset);
   const weekData = state.mealPlan.weeks?.[weekKey] ?? {};
@@ -702,7 +730,8 @@ function render_mealplan() {
         <button class="btn btn-secondary" style="width:100%;justify-content:center" onclick="autoGenerateWeek()">⚡ Auto-Generate Week</button>
         <button class="btn btn-secondary" style="width:100%;justify-content:center" onclick="autoGenerateWeek(true)">🍱 Meal-Prep Week</button>
         <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="generateGroceryFromPlan()">🛒 Generate Grocery List</button>
-      </div>`;
+      </div>
+      ${prepListHTML(weekData)}`;
   } else {
     document.getElementById('mealplan-content').innerHTML = `
       ${weekNav}
@@ -740,7 +769,8 @@ function render_mealplan() {
             </div>`;
           }).join('')}
         </div>
-      </div>`;
+      </div>
+      ${prepListHTML(weekData)}`;
   }
 }
 
