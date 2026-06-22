@@ -705,6 +705,7 @@ function render_mealplan() {
       }).join('')}
       <div style="margin-top:8px;display:flex;flex-direction:column;gap:8px">
         <button class="btn btn-secondary" style="width:100%;justify-content:center" onclick="autoGenerateWeek()">⚡ Auto-Generate Week</button>
+        <button class="btn btn-secondary" style="width:100%;justify-content:center" onclick="autoGenerateWeek(true)">🍱 Meal-Prep Week</button>
         <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="generateGroceryFromPlan()">🛒 Generate Grocery List</button>
       </div>`;
   } else {
@@ -712,6 +713,7 @@ function render_mealplan() {
       ${weekNav}
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:12px">
         <button class="btn btn-secondary btn-sm" onclick="autoGenerateWeek()">⚡ Auto-Generate Week</button>
+        <button class="btn btn-secondary btn-sm" onclick="autoGenerateWeek(true)">🍱 Meal-Prep Week</button>
         <button class="btn btn-primary btn-sm" onclick="generateGroceryFromPlan()">🛒 Generate Grocery List</button>
       </div>
       <div style="overflow-x:auto">
@@ -810,8 +812,15 @@ window.clearMeal = function(weekKey, dayKey, mealKey) {
   }
 };
 
-window.autoGenerateWeek = function() {
-  if (!confirm('Auto-generate will overwrite this week\'s meal plan. Continue?')) return;
+// How many distinct recipes a meal-prep week uses per meal slot (cook this many
+// batches, eat each across several days).
+const PREP_VARIETY = 2;
+
+window.autoGenerateWeek = function(mealPrep = false) {
+  const confirmMsg = mealPrep
+    ? 'Generate a meal-prep week (same meals batched across several days)? This overwrites this week\'s plan.'
+    : 'Auto-generate will overwrite this week\'s meal plan. Continue?';
+  if (!confirm(confirmMsg)) return;
   const weekKey = getWeekKey(mealPlanWeekOffset);
   const p = state.profile;
   const isProteinMode = p.bulkCut || p.increaseMuscle;
@@ -840,6 +849,20 @@ window.autoGenerateWeek = function() {
     return pool;
   }
 
+  // Meal-prep: pick PREP_VARIETY recipes for a slot and spread them across the 7
+  // days in contiguous blocks, so each batch is eaten on consecutive days.
+  function prepPlanFor(mk) {
+    const pool = poolFor(mk);
+    if (!pool.length) return [];
+    const count = Math.min(PREP_VARIETY, pool.length);
+    const chosen = pool.slice(0, count);
+    const perBlock = Math.ceil(DAYS.length / count);
+    return DAYS.map((_, dayIdx) => chosen[Math.min(Math.floor(dayIdx / perBlock), count - 1)]);
+  }
+
+  const prepPlan = {};
+  if (mealPrep) MEAL_KEYS.forEach(mk => { prepPlan[mk] = prepPlanFor(mk); });
+
   DAYS.forEach((d, dayIdx) => {
     const dayKey = d.toLowerCase();
     const dayData = {};
@@ -849,6 +872,11 @@ window.autoGenerateWeek = function() {
       if (dayIdx === 3 && mk === 'lunch') {
         const pinned = state.recipes.find(r => r.id === THURSDAY_LUNCH_ID);
         if (pinned) { dayData[mk] = THURSDAY_LUNCH_ID; used.add(THURSDAY_LUNCH_ID); return; }
+      }
+      if (mealPrep) {
+        const pick = prepPlan[mk]?.[dayIdx];
+        if (pick) dayData[mk] = pick.id;
+        return;
       }
       const pool = poolFor(mk);
       if (!pool.length) return;
@@ -862,7 +890,7 @@ window.autoGenerateWeek = function() {
 
   persist();
   render_mealplan();
-  showToast('Week auto-generated!');
+  showToast(mealPrep ? 'Meal-prep week generated!' : 'Week auto-generated!');
 };
 
 window.generateGroceryFromPlan = function() {
