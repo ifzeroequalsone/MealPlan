@@ -852,7 +852,8 @@ window.autoGenerateWeek = function(mealPrep = false) {
   // Meal-prep: pick PREP_VARIETY recipes for a slot and spread them across the 7
   // days in contiguous blocks, so each batch is eaten on consecutive days.
   function prepPlanFor(mk) {
-    const pool = poolFor(mk);
+    // Eat-out meals can't be batch-cooked, so they're never a meal-prep option.
+    const pool = poolFor(mk).filter(r => !r.tags.some(t => /eat out/i.test(t)));
     if (!pool.length) return [];
     const count = Math.min(PREP_VARIETY, pool.length);
     const chosen = pool.slice(0, count);
