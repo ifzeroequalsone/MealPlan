@@ -761,12 +761,15 @@ function prepListHTML(weekData) {
     .sort((a, b) => b.qty - a.qty || a.recipe.name.localeCompare(b.recipe.name));
   if (!items.length) return '';
 
-  const rows = items.map(({ recipe, qty }) => `
-    <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">
-      <span style="background:var(--green);color:#fff;font-weight:700;font-size:0.8rem;border-radius:6px;padding:2px 8px;min-width:34px;text-align:center">${qty}×</span>
+  const rows = items.map(({ recipe, qty }) => {
+    const h = recipeHue(recipe);
+    return `
+    <div style="display:flex;align-items:center;gap:10px;padding:7px 9px;margin-bottom:5px;border-radius:8px;background:hsl(${h},72%,93%);border-left:4px solid hsl(${h},55%,60%)">
+      <span style="background:hsl(${h},55%,52%);color:#fff;font-weight:700;font-size:0.8rem;border-radius:6px;padding:2px 8px;min-width:34px;text-align:center">${qty}×</span>
       <span style="flex:1;font-weight:600;font-size:0.9rem">${esc(recipe.name)}</span>
       <span style="color:var(--text-muted);font-size:0.75rem;white-space:nowrap">${recipe.macros.protein}g P · ⏱ ${recipe.prepTime}min</span>
-    </div>`).join('');
+    </div>`;
+  }).join('');
   const totalServings = items.reduce((s, x) => s + x.qty, 0);
   return `
     <div class="card" style="margin-top:14px">
