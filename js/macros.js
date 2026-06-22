@@ -26,11 +26,17 @@ function calcTDEE(profile) {
 
 function calcTargets(profile) {
   const tdee = calcTDEE(profile);
-  const { currentWeight, goalWeight, goalWeeks, increaseMuscle } = profile;
+  const { currentWeight, goalWeight, goalWeeks, increaseMuscle, bulkCut } = profile;
 
   let targetCals;
   if (increaseMuscle) {
     targetCals = tdee + 350;
+  } else if (bulkCut) {
+    // Recomp: moderate deficit, elevated protein
+    const lbsDiff = currentWeight - goalWeight;
+    const weeklyDeficit = lbsDiff > 0 ? (lbsDiff * 3500) / goalWeeks : 500;
+    const clampedDeficit = Math.min(Math.max(weeklyDeficit / 7, 200), 600);
+    targetCals = Math.max(tdee - clampedDeficit, profile.gender === 'female' ? 1400 : 1600);
   } else {
     const lbsDiff = currentWeight - goalWeight;
     if (lbsDiff <= 0) {
@@ -43,7 +49,7 @@ function calcTargets(profile) {
     }
   }
 
-  const proteinPerLb = increaseMuscle ? 1.1 : 0.9;
+  const proteinPerLb = (increaseMuscle || bulkCut) ? 1.1 : 0.9;
   const proteinG = Math.round(profile.currentWeight * proteinPerLb);
   const fatCals = targetCals * 0.25;
   const fatG = Math.round(fatCals / 9);
@@ -61,8 +67,9 @@ function calcTargets(profile) {
 }
 
 function goalSummary(profile) {
-  const { currentWeight, goalWeight, goalWeeks, increaseMuscle } = profile;
+  const { currentWeight, goalWeight, goalWeeks, increaseMuscle, bulkCut } = profile;
   const diff = Math.abs(currentWeight - goalWeight);
+  if (bulkCut) return `Bulk+Cut — ${goalWeeks}w recomp`;
   if (increaseMuscle) return `Build muscle — ${goalWeeks}w plan`;
   if (currentWeight > goalWeight) return `Lose ${diff} lbs in ${goalWeeks} weeks`;
   if (currentWeight < goalWeight) return `Gain ${diff} lbs in ${goalWeeks} weeks`;
