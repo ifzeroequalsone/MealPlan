@@ -3,7 +3,6 @@
 const STORAGE_KEY = 'mealplan_v1';
 
 const defaultProfile = {
-  name: '',
   age: 30,
   gender: 'male',
   heightFt: 6,

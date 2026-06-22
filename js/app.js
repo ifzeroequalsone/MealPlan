@@ -190,10 +190,6 @@ function render_goals() {
       <div>
         <div class="card">
           <div class="card-title">Personal Info</div>
-          <div class="form-group">
-            <label>Name</label>
-            <input type="text" id="g-name" value="${esc(p.name)}" placeholder="Your name">
-          </div>
           <div class="form-row">
             <div class="form-group">
               <label>Age</label>
@@ -294,7 +290,7 @@ function render_goals() {
     </div>
   `;
 
-  const inputs = ['g-name','g-age','g-gender','g-hft','g-hin','g-activity','g-cw','g-gw','g-weeks','g-start'];
+  const inputs = ['g-age','g-gender','g-hft','g-hin','g-activity','g-cw','g-gw','g-weeks','g-start'];
   inputs.forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('input', liveRecalc);
@@ -356,7 +352,6 @@ function renderGoalSummary(p, targets) {
 
 function readGoalForm() {
   return {
-    name: document.getElementById('g-name')?.value.trim() ?? state.profile.name,
     age: parseInt(document.getElementById('g-age')?.value) || state.profile.age,
     gender: document.getElementById('g-gender')?.value ?? state.profile.gender,
     heightFt: parseInt(document.getElementById('g-hft')?.value) || state.profile.heightFt,
