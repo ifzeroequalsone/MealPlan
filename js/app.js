@@ -729,6 +729,25 @@ let recipeTagFilter = '';
 
 function isMobile() { return window.innerWidth <= 768; }
 
+// Stable per-recipe color so the same meal shows the same tint across the week.
+function recipeHue(recipe) {
+  const s = recipe.id || recipe.name || '';
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 33 + s.charCodeAt(i)) >>> 0;
+  return Math.round((h * 137.508) % 360); // golden-angle spread for distinct hues
+}
+function mealTint(recipe) {
+  const h = recipeHue(recipe);
+  return `background:hsl(${h},72%,92%);border-left:4px solid hsl(${h},55%,60%)`;
+}
+// Eat-out meals aren't cooked from a recipe — flag them with a money symbol.
+function isEatOutRecipe(recipe) {
+  return recipe.tags?.some(t => /eat out/i.test(t));
+}
+function mealMoney(recipe) {
+  return isEatOutRecipe(recipe) ? '💲 ' : '';
+}
+
 // A "what to cook" summary for the week: each cookable (non-eat-out) recipe and
 // how many servings to make. Returns '' when there's nothing to prep.
 function prepListHTML(weekData) {
@@ -823,9 +842,9 @@ function render_mealplan() {
               <span>${MEALS[mi]}</span>
               ${recipe ? `<button class="btn btn-danger btn-sm" style="min-height:0;padding:3px 8px" onclick="clearMeal('${weekKey}','${selDay}','${mk}')">✕ Clear</button>` : ''}
             </div>
-            <div class="mobile-meal-body ${recipe ? '' : 'empty'}" onclick="openMealPicker('${weekKey}','${selDay}','${mk}')">
+            <div class="mobile-meal-body ${recipe ? '' : 'empty'}" ${recipe ? `style="${mealTint(recipe)}"` : ''} onclick="openMealPicker('${weekKey}','${selDay}','${mk}')">
               ${recipe
-                ? `<div style="flex:1"><div class="mobile-meal-name">${esc(recipe.name)}</div><div class="mobile-meal-macros">${recipe.macros.calories} cal · ${recipe.macros.protein}g protein · ⏱ ${recipe.prepTime}min</div></div><span style="color:var(--green);font-size:1.1rem">›</span>`
+                ? `<div style="flex:1"><div class="mobile-meal-name">${mealMoney(recipe)}${esc(recipe.name)}</div><div class="mobile-meal-macros">${recipe.macros.calories} cal · ${recipe.macros.protein}g protein · ⏱ ${recipe.prepTime}min</div></div><span style="color:var(--green);font-size:1.1rem">›</span>`
                 : `<span class="mobile-meal-add">+ Tap to add a meal</span>`}
             </div>
           </div>`;
@@ -854,9 +873,9 @@ function render_mealplan() {
               const rid = weekData?.[key]?.[mk];
               const recipe = rid ? state.recipes.find(r => r.id === rid) : null;
               return recipe
-                ? `<div class="meal-slot filled" onclick="openMealPicker('${weekKey}','${key}','${mk}')">
+                ? `<div class="meal-slot filled" style="${mealTint(recipe)}" onclick="openMealPicker('${weekKey}','${key}','${mk}')">
                     <button class="meal-slot-clear" onclick="event.stopPropagation();clearMeal('${weekKey}','${key}','${mk}')">✕</button>
-                    <div class="meal-slot-recipe">${esc(recipe.name)}</div>
+                    <div class="meal-slot-recipe">${mealMoney(recipe)}${esc(recipe.name)}</div>
                     <div class="meal-slot-macros">${recipe.macros.calories} cal · ${recipe.macros.protein}g P</div>
                   </div>`
                 : `<div class="meal-slot" onclick="openMealPicker('${weekKey}','${key}','${mk}')"><div class="meal-slot-add">+ Add</div></div>`;
