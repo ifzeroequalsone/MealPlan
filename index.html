@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MealPlan — Personal Nutrition & Meal Planner</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    /* Toast */
+    #toast {
+      position: fixed;
+      bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px);
+      background: var(--green);
+      color: #fff;
+      padding: 10px 22px;
+      border-radius: 99px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+      z-index: 9999;
+      transition: transform 0.25s cubic-bezier(.34,1.56,.64,1);
+      white-space: nowrap;
+    }
+    #toast.show { transform: translateX(-50%) translateY(0); }
+  </style>
+</head>
+<body>
+
+<!-- ── Sidebar ── -->
+<aside id="sidebar">
+  <div class="logo">
+    <h1>🥦 MealPlan</h1>
+    <span>Personal Nutrition Tracker</span>
+  </div>
+  <nav>
+    <a href="#" id="nav-dashboard" data-nav="dashboard">
+      <span class="icon">📊</span><span>Dashboard</span>
+    </a>
+    <a href="#" id="nav-goals" data-nav="goals">
+      <span class="icon">🎯</span><span>Goals & Macros</span>
+    </a>
+    <a href="#" id="nav-recipes" data-nav="recipes">
+      <span class="icon">🍳</span><span>Recipes</span>
+    </a>
+    <a href="#" id="nav-mealplan" data-nav="mealplan">
+      <span class="icon">📅</span><span>Meal Plan</span>
+    </a>
+    <a href="#" id="nav-grocery" data-nav="grocery">
+      <span class="icon">🛒</span><span>Grocery List</span>
+    </a>
+  </nav>
+  <div class="sidebar-footer">All data stored locally</div>
+</aside>
+
+<!-- ── Main Content ── -->
+<main id="main">
+
+  <!-- Dashboard -->
+  <section id="page-dashboard" class="page">
+    <div class="page-header">
+      <div>
+        <h2>📊 Dashboard</h2>
+        <p>Your daily summary and goal progress</p>
+      </div>
+    </div>
+    <div class="page-body">
+      <div id="dash-content"></div>
+    </div>
+  </section>
+
+  <!-- Goals -->
+  <section id="page-goals" class="page">
+    <div class="page-header">
+      <div>
+        <h2>🎯 Goals & Macros</h2>
+        <p>Set your body goals and get personalized macro targets</p>
+      </div>
+    </div>
+    <div class="page-body">
+      <div id="goals-content"></div>
+    </div>
+  </section>
+
+  <!-- Recipes -->
+  <section id="page-recipes" class="page">
+    <div class="page-header">
+      <div>
+        <h2>🍳 Recipes</h2>
+        <p>Browse and manage your meal library</p>
+      </div>
+    </div>
+    <div class="page-body">
+      <div class="section-actions">
+        <input type="text" id="recipe-search" class="search-input" placeholder="🔍 Search recipes or tags…">
+        <button class="btn btn-primary" onclick="editRecipe(null)">+ New Recipe</button>
+      </div>
+      <div id="recipes-content"></div>
+    </div>
+  </section>
+
+  <!-- Meal Plan -->
+  <section id="page-mealplan" class="page">
+    <div class="page-header">
+      <div>
+        <h2>📅 Meal Plan</h2>
+        <p>Plan your weekly meals and track macro totals</p>
+      </div>
+    </div>
+    <div class="page-body">
+      <div id="mealplan-content"></div>
+    </div>
+  </section>
+
+  <!-- Grocery -->
+  <section id="page-grocery" class="page">
+    <div class="page-header">
+      <div>
+        <h2>🛒 Grocery List</h2>
+        <p>Auto-generated from your meal plan, or add items manually</p>
+      </div>
+    </div>
+    <div class="page-body">
+      <div id="grocery-content"></div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ── Modal ── -->
+<div id="modal-overlay" class="modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modal-title">Modal</h3>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-footer" id="modal-footer"></div>
+  </div>
+</div>
+
+<!-- ── Toast ── -->
+<div id="toast"></div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
