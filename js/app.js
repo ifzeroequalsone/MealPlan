@@ -12,6 +12,7 @@ function navigate(id) {
   pages.forEach(p => {
     document.getElementById(`page-${p}`)?.classList.toggle('active', p === id);
     document.getElementById(`nav-${p}`)?.classList.toggle('active', p === id);
+    document.getElementById(`bnav-${p}`)?.classList.toggle('active', p === id);
   });
   render(id);
 }
@@ -82,7 +83,7 @@ function render_dashboard() {
         `🎯 ${summary} — <strong>${dl} days</strong> remaining`}
     </div>
 
-    <div class="grid-4" style="margin-bottom:16px">
+    <div class="grid-4 stats-row" style="margin-bottom:16px">
       <div class="stat-card green">
         <span class="stat-label">Target Calories</span>
         <span class="stat-value">${targets.calories}</span>
@@ -560,34 +561,34 @@ const MEAL_KEYS = ['breakfast','lunch','dinner','snack'];
 
 function getWeekKey(offset = 0) {
   const d = new Date();
-  d.setDate(d.getDate() - d.getDay() + 1 + offset * 7); // Monday
+  d.setDate(d.getDate() - d.getDay() + 1 + offset * 7);
   return d.toISOString().slice(0, 10);
 }
 
 function getTodayKey() {
-  const day = new Date().getDay(); // 0=Sun..6=Sat
+  const day = new Date().getDay();
   const dayIdx = day === 0 ? 6 : day - 1;
   return DAYS[dayIdx].toLowerCase();
 }
 
 let mealPlanWeekOffset = 0;
+let mealPlanSelectedDay = getTodayKey();
+
+function isMobile() { return window.innerWidth <= 768; }
 
 function render_mealplan() {
   const weekKey = getWeekKey(mealPlanWeekOffset);
   const weekData = state.mealPlan.weeks?.[weekKey] ?? {};
   const targets = calcTargets(state.profile);
 
-  // Build date labels
   const weekStart = new Date(weekKey);
   const dayLabels = DAYS.map((d, i) => {
     const dt = new Date(weekStart);
     dt.setDate(dt.getDate() + i);
     const isToday = dt.toDateString() === new Date().toDateString();
-    const label = `${d}<br><span style="font-size:0.7rem;font-weight:400">${dt.getMonth()+1}/${dt.getDate()}</span>`;
-    return { d, isToday, label, key: d.toLowerCase() };
+    return { d, isToday, key: d.toLowerCase(), date: `${dt.getMonth()+1}/${dt.getDate()}` };
   });
 
-  // Compute daily totals
   const dailyTotals = {};
   dayLabels.forEach(({ key }) => {
     const meals = weekData[key] ?? {};
@@ -600,54 +601,104 @@ function render_mealplan() {
   });
 
   const weekStr = weekKey + ' – ' + new Date(new Date(weekKey).setDate(new Date(weekKey).getDate() + 6)).toISOString().slice(0, 10);
-
-  document.getElementById('mealplan-content').innerHTML = `
-    <div class="week-nav">
+  const weekNav = `
+    <div class="week-nav" style="margin-bottom:14px">
       <button class="btn btn-secondary btn-sm" onclick="shiftWeek(-1)">← Prev</button>
-      <span style="font-weight:600;font-size:0.95rem">${weekStr}</span>
+      <span style="font-weight:600;font-size:0.9rem;flex:1;text-align:center">${weekStr}</span>
       <button class="btn btn-secondary btn-sm" onclick="shiftWeek(1)">Next →</button>
       ${mealPlanWeekOffset !== 0 ? `<button class="btn btn-outline btn-sm" onclick="shiftWeek(${-mealPlanWeekOffset})">Today</button>` : ''}
-      <button class="btn btn-primary btn-sm" onclick="generateGroceryFromPlan()" style="margin-left:auto">🛒 Generate Grocery List</button>
-    </div>
-    <div style="overflow-x:auto">
-      <div class="week-grid" style="margin-bottom:8px">
-        <div></div>
-        ${dayLabels.map(({ label, isToday }) => `<div class="week-day-header ${isToday ? 'today' : ''}">${label}</div>`).join('')}
+    </div>`;
 
-        ${MEAL_KEYS.map((mk, mi) => `
-          <div class="meal-label">${MEALS[mi]}</div>
-          ${dayLabels.map(({ key }) => {
-            const rid = weekData?.[key]?.[mk];
-            const recipe = rid ? state.recipes.find(r => r.id === rid) : null;
-            return recipe
-              ? `<div class="meal-slot filled" onclick="openMealPicker('${weekKey}','${key}','${mk}')">
-                  <button class="meal-slot-clear" onclick="event.stopPropagation();clearMeal('${weekKey}','${key}','${mk}')">✕</button>
-                  <div class="meal-slot-recipe">${esc(recipe.name)}</div>
-                  <div class="meal-slot-macros">${recipe.macros.calories} cal · ${recipe.macros.protein}g P</div>
-                </div>`
-              : `<div class="meal-slot" onclick="openMealPicker('${weekKey}','${key}','${mk}')">
-                  <div class="meal-slot-add">+ Add</div>
-                </div>`;
-          }).join('')}
+  if (isMobile()) {
+    // Ensure selectedDay is valid for this week
+    if (!dayLabels.find(dl => dl.key === mealPlanSelectedDay)) {
+      mealPlanSelectedDay = getTodayKey();
+    }
+    const selDay = mealPlanSelectedDay;
+    const dayMeals = weekData[selDay] ?? {};
+    const dt = dailyTotals[selDay];
+    const pct = Math.round(dt.calories / targets.calories * 100);
+    const calColor = pct > 110 ? 'var(--red)' : pct > 90 ? 'var(--green)' : 'var(--text-muted)';
+
+    document.getElementById('mealplan-content').innerHTML = `
+      ${weekNav}
+      <div class="day-tabs">
+        ${dayLabels.map(({ d, key, isToday, date }) => `
+          <button class="day-tab ${isToday ? 'today' : ''} ${key === selDay ? 'active' : ''}" onclick="selectMealDay('${weekKey}','${key}')">${d}<br><span style="font-size:0.65rem;font-weight:400">${date}</span></button>
         `).join('')}
-
-        <div class="meal-label" style="font-size:0.7rem">TOTAL</div>
-        ${dayLabels.map(({ key }) => {
-          const t = dailyTotals[key];
-          const pct = Math.round(t.calories / targets.calories * 100);
-          const color = pct > 110 ? 'var(--red)' : pct > 90 ? 'var(--green)' : 'var(--text-muted)';
-          return `<div style="background:var(--surface);border-radius:8px;padding:6px 8px;text-align:center;font-size:0.72rem">
-            <div style="font-weight:700;color:${color}">${t.calories} cal</div>
-            <div style="color:var(--text-muted)">${t.protein}g P</div>
-          </div>`;
-        }).join('')}
       </div>
-    </div>
-  `;
+      <div class="mobile-day-total">
+        <span style="color:var(--text-muted);font-size:0.8rem">Today's total</span>
+        <div style="text-align:right">
+          <strong style="color:${calColor}">${dt.calories} cal</strong>
+          <span style="color:var(--text-muted);font-size:0.8rem"> · ${dt.protein}g P · ${dt.carbs}g C · ${dt.fat}g F</span>
+        </div>
+      </div>
+      ${MEAL_KEYS.map((mk, mi) => {
+        const rid = dayMeals[mk];
+        const recipe = rid ? state.recipes.find(r => r.id === rid) : null;
+        return `
+          <div class="mobile-meal-row">
+            <div class="mobile-meal-header">
+              <span>${MEALS[mi]}</span>
+              ${recipe ? `<button class="btn btn-danger btn-sm" style="min-height:0;padding:3px 8px" onclick="clearMeal('${weekKey}','${selDay}','${mk}')">✕ Clear</button>` : ''}
+            </div>
+            <div class="mobile-meal-body ${recipe ? '' : 'empty'}" onclick="openMealPicker('${weekKey}','${selDay}','${mk}')">
+              ${recipe
+                ? `<div style="flex:1"><div class="mobile-meal-name">${esc(recipe.name)}</div><div class="mobile-meal-macros">${recipe.macros.calories} cal · ${recipe.macros.protein}g protein · ⏱ ${recipe.prepTime}min</div></div><span style="color:var(--green);font-size:1.1rem">›</span>`
+                : `<span class="mobile-meal-add">+ Tap to add a meal</span>`}
+            </div>
+          </div>`;
+      }).join('')}
+      <div style="margin-top:8px">
+        <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="generateGroceryFromPlan()">🛒 Generate Grocery List</button>
+      </div>`;
+  } else {
+    document.getElementById('mealplan-content').innerHTML = `
+      ${weekNav}
+      <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+        <button class="btn btn-primary btn-sm" onclick="generateGroceryFromPlan()">🛒 Generate Grocery List</button>
+      </div>
+      <div style="overflow-x:auto">
+        <div class="week-grid" style="margin-bottom:8px">
+          <div></div>
+          ${dayLabels.map(({ d, date, isToday }) => `<div class="week-day-header ${isToday ? 'today' : ''}">${d}<br><span style="font-size:0.7rem;font-weight:400">${date}</span></div>`).join('')}
+          ${MEAL_KEYS.map((mk, mi) => `
+            <div class="meal-label">${MEALS[mi]}</div>
+            ${dayLabels.map(({ key }) => {
+              const rid = weekData?.[key]?.[mk];
+              const recipe = rid ? state.recipes.find(r => r.id === rid) : null;
+              return recipe
+                ? `<div class="meal-slot filled" onclick="openMealPicker('${weekKey}','${key}','${mk}')">
+                    <button class="meal-slot-clear" onclick="event.stopPropagation();clearMeal('${weekKey}','${key}','${mk}')">✕</button>
+                    <div class="meal-slot-recipe">${esc(recipe.name)}</div>
+                    <div class="meal-slot-macros">${recipe.macros.calories} cal · ${recipe.macros.protein}g P</div>
+                  </div>`
+                : `<div class="meal-slot" onclick="openMealPicker('${weekKey}','${key}','${mk}')"><div class="meal-slot-add">+ Add</div></div>`;
+            }).join('')}
+          `).join('')}
+          <div class="meal-label" style="font-size:0.7rem">TOTAL</div>
+          ${dayLabels.map(({ key }) => {
+            const t = dailyTotals[key];
+            const pct = Math.round(t.calories / targets.calories * 100);
+            const color = pct > 110 ? 'var(--red)' : pct > 90 ? 'var(--green)' : 'var(--text-muted)';
+            return `<div style="background:var(--surface);border-radius:8px;padding:6px 8px;text-align:center;font-size:0.72rem">
+              <div style="font-weight:700;color:${color}">${t.calories} cal</div>
+              <div style="color:var(--text-muted)">${t.protein}g P</div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+  }
 }
 
 window.shiftWeek = function(delta) {
   mealPlanWeekOffset += delta;
+  render_mealplan();
+};
+
+window.selectMealDay = function(weekKey, dayKey) {
+  mealPlanSelectedDay = dayKey;
   render_mealplan();
 };
 
