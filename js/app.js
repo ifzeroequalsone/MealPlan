@@ -761,16 +761,21 @@ function planSettings() {
 }
 function planSettingsBar() {
   const { optimizeFor, maxServings } = planSettings();
-  const optBtn = (v, l) => `<button class="btn btn-sm ${optimizeFor === v ? 'btn-primary' : 'btn-outline'}" onclick="setPlanOpt('${v}')">${l}</button>`;
-  const mxBtn = (v) => `<button class="btn btn-sm ${maxServings === v ? 'btn-primary' : 'btn-outline'}" onclick="setPlanMax(${v})">${v}</button>`;
+  const opt = (v, l) => `<option value="${v}" ${optimizeFor === v ? 'selected' : ''}>${l}</option>`;
   return `
     <div class="card" style="padding:10px 12px;margin-bottom:12px;display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;font-size:0.8rem">
-      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="color:var(--text-muted);font-weight:600">Auto-gen optimize</span>${optBtn('calories','Cal')}${optBtn('protein','Protein')}${optBtn('balance','Balance')}</div>
-      <div style="display:flex;align-items:center;gap:6px"><span style="color:var(--text-muted);font-weight:600">Max/meal</span>${mxBtn(3)}${mxBtn(4)}${mxBtn(5)}</div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="color:var(--text-muted);font-weight:600">Auto-gen optimize</span>
+        <select onchange="setPlanOpt(this.value)" style="font-size:0.8rem;padding:4px 8px">${opt('calories','Calories')}${opt('protein','Protein')}${opt('balance','Balance')}</select>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="color:var(--text-muted);font-weight:600">Max servings / meal</span>
+        <input type="number" min="1" max="10" value="${maxServings}" onchange="setPlanMax(this.value)" style="width:64px;font-size:0.8rem;padding:4px 8px">
+      </div>
     </div>`;
 }
-window.setPlanOpt = function(v) { state.planSettings = { ...planSettings(), optimizeFor: v }; persist(); render_mealplan(); };
-window.setPlanMax = function(v) { state.planSettings = { ...planSettings(), maxServings: v }; persist(); render_mealplan(); };
+window.setPlanOpt = function(v) { state.planSettings = { ...planSettings(), optimizeFor: v }; persist(); };
+window.setPlanMax = function(v) { const n = Math.max(1, Math.min(10, parseInt(v) || 4)); state.planSettings = { ...planSettings(), maxServings: n }; persist(); };
 
 // Sum macros for a day's slots, accounting for servings.
 function dayMacros(day) {
