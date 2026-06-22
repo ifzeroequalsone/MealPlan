@@ -538,29 +538,40 @@ function tagColor(tag) {
   return '';
 }
 
-window.viewRecipe = function(id) {
+window.viewRecipe = function(id, multiplier = 1) {
   const r = state.recipes.find(r => r.id === id);
   if (!r) return;
+  const mult = Math.max(1, parseInt(multiplier) || 1);
   const targets = calcTargets(state.profile);
-  openModal('Recipe Details', `
+  const m = r.macros;
+  const sm = { calories: m.calories * mult, protein: m.protein * mult, carbs: m.carbs * mult, fat: m.fat * mult };
+  const scaleAmt = (a) => { const n = parseFloat(a); return isNaN(n) ? a : trimNum(n * mult); };
+  const batchNote = mult > 1
+    ? `<div style="background:var(--green-light);color:var(--green);font-weight:600;font-size:0.82rem;padding:9px 12px;border-radius:8px;margin-bottom:14px">🍱 Batch for ${mult} servings — amounts & macros multiplied ×${mult}</div>`
+    : '';
+  const summaryLine = mult > 1
+    ? `<div style="margin-bottom:4px;font-size:0.85rem;color:var(--text-muted)">Per serving · ${m.calories} cal · ${m.protein}g P · ${m.carbs}g C · ${m.fat}g F</div>`
+    : `<div style="margin-bottom:4px;font-size:0.85rem;color:var(--text-muted)">% of daily target · ${Math.round(m.calories/targets.calories*100)}% calories · ${Math.round(m.protein/targets.protein*100)}% protein</div>`;
+  openModal(mult > 1 ? `Recipe Details · ×${mult}` : 'Recipe Details', `
+    ${batchNote}
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
       ${r.tags.map(t => `<span class="tag ${tagColor(t)}">${esc(t)}</span>`).join('')}
       <span class="tag" style="background:#f5f5f5;color:var(--text-muted)">⏱ ${r.prepTime} min</span>
     </div>
     <div class="grid-4" style="margin-bottom:20px">
-      <div style="text-align:center;padding:10px;background:var(--green-light);border-radius:8px"><div style="font-size:1.4rem;font-weight:700;color:var(--green)">${r.macros.calories}</div><div style="font-size:0.72rem;color:var(--green);font-weight:600">CALORIES</div></div>
-      <div style="text-align:center;padding:10px;background:var(--blue-light);border-radius:8px"><div style="font-size:1.4rem;font-weight:700;color:var(--blue)">${r.macros.protein}g</div><div style="font-size:0.72rem;color:var(--blue);font-weight:600">PROTEIN</div></div>
-      <div style="text-align:center;padding:10px;background:var(--orange-light);border-radius:8px"><div style="font-size:1.4rem;font-weight:700;color:var(--orange)">${r.macros.carbs}g</div><div style="font-size:0.72rem;color:var(--orange);font-weight:600">CARBS</div></div>
-      <div style="text-align:center;padding:10px;background:var(--purple-light);border-radius:8px"><div style="font-size:1.4rem;font-weight:700;color:var(--purple)">${r.macros.fat}g</div><div style="font-size:0.72rem;color:var(--purple);font-weight:600">FAT</div></div>
+      <div style="text-align:center;padding:10px;background:var(--green-light);border-radius:8px"><div style="font-size:1.4rem;font-weight:700;color:var(--green)">${sm.calories}</div><div style="font-size:0.72rem;color:var(--green);font-weight:600">CALORIES</div></div>
+      <div style="text-align:center;padding:10px;background:var(--blue-light);border-radius:8px"><div style="font-size:1.4rem;font-weight:700;color:var(--blue)">${sm.protein}g</div><div style="font-size:0.72rem;color:var(--blue);font-weight:600">PROTEIN</div></div>
+      <div style="text-align:center;padding:10px;background:var(--orange-light);border-radius:8px"><div style="font-size:1.4rem;font-weight:700;color:var(--orange)">${sm.carbs}g</div><div style="font-size:0.72rem;color:var(--orange);font-weight:600">CARBS</div></div>
+      <div style="text-align:center;padding:10px;background:var(--purple-light);border-radius:8px"><div style="font-size:1.4rem;font-weight:700;color:var(--purple)">${sm.fat}g</div><div style="font-size:0.72rem;color:var(--purple);font-weight:600">FAT</div></div>
     </div>
-    <div style="margin-bottom:4px;font-size:0.85rem;color:var(--text-muted)">% of daily target · ${Math.round(r.macros.calories/targets.calories*100)}% calories · ${Math.round(r.macros.protein/targets.protein*100)}% protein</div>
+    ${summaryLine}
     <div class="divider"></div>
-    <h4 style="font-size:0.9rem;font-weight:700;margin-bottom:10px">Ingredients</h4>
+    <h4 style="font-size:0.9rem;font-weight:700;margin-bottom:10px">Ingredients${mult > 1 ? ` <span style="font-weight:400;color:var(--text-muted)">(for ${mult} servings)</span>` : ''}</h4>
     <div style="display:flex;flex-direction:column;gap:6px">
       ${r.ingredients.map(ing => `
         <div style="display:flex;justify-content:space-between;padding:7px 10px;background:#f9f9f9;border-radius:6px;font-size:0.9rem">
           <span>${esc(ing.name)}</span>
-          <span style="color:var(--text-muted);font-weight:600">${esc(ing.amount)} ${esc(ing.unit)}</span>
+          <span style="color:var(--text-muted);font-weight:600">${esc(scaleAmt(ing.amount))} ${esc(ing.unit)}</span>
         </div>`).join('')}
     </div>
     <div class="divider"></div>
@@ -764,7 +775,7 @@ function prepListHTML(weekData) {
   const rows = items.map(({ recipe, qty }) => {
     const h = recipeHue(recipe);
     return `
-    <div style="display:flex;align-items:center;gap:10px;padding:7px 9px;margin-bottom:5px;border-radius:8px;background:hsl(${h},72%,93%);border-left:4px solid hsl(${h},55%,60%)">
+    <div title="View recipe (×${qty})" onclick="viewRecipe('${recipe.id}', ${qty})" style="display:flex;align-items:center;gap:10px;padding:7px 9px;margin-bottom:5px;border-radius:8px;cursor:pointer;background:hsl(${h},72%,93%);border-left:4px solid hsl(${h},55%,60%)">
       <span style="background:hsl(${h},55%,52%);color:#fff;font-weight:700;font-size:0.8rem;border-radius:6px;padding:2px 8px;min-width:34px;text-align:center">${qty}×</span>
       <span style="flex:1;font-weight:600;font-size:0.9rem">${esc(recipe.name)}</span>
       <span style="color:var(--text-muted);font-size:0.75rem;white-space:nowrap">${recipe.macros.protein}g P · ⏱ ${recipe.prepTime}min</span>
@@ -843,9 +854,9 @@ function render_mealplan() {
           <div class="mobile-meal-row">
             <div class="mobile-meal-header">
               <span>${MEALS[mi]}</span>
-              ${recipe ? `<button class="btn btn-danger btn-sm" style="min-height:0;padding:3px 8px" onclick="clearMeal('${weekKey}','${selDay}','${mk}')">✕ Clear</button>` : ''}
+              ${recipe ? `<button class="btn btn-secondary btn-sm" style="min-height:0;padding:3px 8px" onclick="openMealPicker('${weekKey}','${selDay}','${mk}')">✏️ Edit</button>` : ''}
             </div>
-            <div class="mobile-meal-body ${recipe ? '' : 'empty'}" ${recipe ? `style="${mealTint(recipe)}"` : ''} onclick="openMealPicker('${weekKey}','${selDay}','${mk}')">
+            <div class="mobile-meal-body ${recipe ? '' : 'empty'}" ${recipe ? `style="${mealTint(recipe)}"` : ''} onclick="${recipe ? `viewRecipe('${rid}')` : `openMealPicker('${weekKey}','${selDay}','${mk}')`}">
               ${recipe
                 ? `<div style="flex:1"><div class="mobile-meal-name">${mealMoney(recipe)}${esc(recipe.name)}</div><div class="mobile-meal-macros">${recipe.macros.calories} cal · ${recipe.macros.protein}g protein · ⏱ ${recipe.prepTime}min</div></div><span style="color:var(--green);font-size:1.1rem">›</span>`
                 : `<span class="mobile-meal-add">+ Tap to add a meal</span>`}
@@ -876,8 +887,8 @@ function render_mealplan() {
               const rid = weekData?.[key]?.[mk];
               const recipe = rid ? state.recipes.find(r => r.id === rid) : null;
               return recipe
-                ? `<div class="meal-slot filled" style="${mealTint(recipe)}" onclick="openMealPicker('${weekKey}','${key}','${mk}')">
-                    <button class="meal-slot-clear" onclick="event.stopPropagation();clearMeal('${weekKey}','${key}','${mk}')">✕</button>
+                ? `<div class="meal-slot filled" style="${mealTint(recipe)}" onclick="viewRecipe('${rid}')">
+                    <button class="meal-slot-edit" title="Change this meal" onclick="event.stopPropagation();openMealPicker('${weekKey}','${key}','${mk}')">✏️</button>
                     <div class="meal-slot-recipe">${mealMoney(recipe)}${esc(recipe.name)}</div>
                     <div class="meal-slot-macros">${recipe.macros.calories} cal · ${recipe.macros.protein}g P</div>
                   </div>`

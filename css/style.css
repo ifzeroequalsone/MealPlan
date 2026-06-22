@@ -430,6 +430,16 @@ body {
 }
 .meal-slot:hover .meal-slot-clear { opacity: 1; }
 .meal-slot-clear:hover { color: var(--red); background: var(--red-light); }
+.meal-slot-edit {
+  position: absolute;
+  top: 4px; right: 4px;
+  background: none; border: none;
+  cursor: pointer; font-size: 0.8rem;
+  padding: 1px 3px; border-radius: 3px;
+  opacity: 0; transition: opacity 0.15s;
+}
+.meal-slot:hover .meal-slot-edit { opacity: 1; }
+.meal-slot-edit:hover { background: var(--green-light); }
 
 /* ── Grocery List ── */
 .grocery-categories { display: flex; flex-direction: column; gap: 16px; }
